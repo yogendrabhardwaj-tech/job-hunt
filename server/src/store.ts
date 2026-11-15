@@ -61,11 +61,43 @@ export function updateProfile(patch: Partial<Profile>): Profile {
 }
 
 export function listJobs(): Job[] {
+  db().jobs.forEach(expireStuckScan);
   return [...db().jobs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 export function getJob(id: string): Job | undefined {
-  return db().jobs.find((j) => j.id === id);
+  const j = db().jobs.find((x) => x.id === id);
+  if (j) expireStuckScan(j);
+  return j;
+}
+
+const PLACEHOLDER_TITLE = 'Scanning role…';
+
+/** Marks a scan as failed, and swaps the "Scanning role…" placeholder title for something that says what it is. */
+export function failScan(id: string, error: string, log = false) {
+  const j = db().jobs.find((x) => x.id === id);
+  if (!j) return;
+  j.scan = { state: 'error', error };
+  if (j.title === PLACEHOLDER_TITLE) {
+    let host = '';
+    try {
+      host = j.url ? new URL(j.url).hostname.replace(/^www\./, '') : '';
+    } catch {}
+    j.title = host ? `Role from ${host}` : 'Untitled role';
+  }
+  j.updatedAt = now();
+  persist();
+  if (log) logActivity(id, `Scan failed: ${error}`, 'error');
+}
+
+/**
+ * A scan still "pending" or "running" long after it started died without reporting (on Vercel a function is
+ * stopped after 5 minutes). Show it as failed so it can be retried, instead of "Scanning…" forever.
+ */
+const STUCK_SCAN_MS = 6 * 60_000;
+function expireStuckScan(j: Job) {
+  if ((j.scan.state === 'pending' || j.scan.state === 'running') && Date.now() - new Date(j.updatedAt).getTime() > STUCK_SCAN_MS)
+    failScan(j.id, 'The scan stopped before it finished. Try again.', true);
 }
 
 export function createJob(input: { url: string; jdText?: string }): Job {
@@ -74,7 +106,7 @@ export function createJob(input: { url: string; jdText?: string }): Job {
   const job: Job = {
     id,
     url: input.url,
-    title: 'Scanning role…',
+    title: PLACEHOLDER_TITLE,
     company: '',
     location: '',
     employmentType: '',

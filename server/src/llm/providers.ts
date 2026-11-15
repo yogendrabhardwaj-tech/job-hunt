@@ -155,6 +155,13 @@ function defaults(): Settings {
  */
 const INCLUDED_KEY = (process.env.OPENROUTER_API_KEY ?? '').trim();
 export const INCLUDED_ID = 'included-free';
+// OpenRouter keys look like sk-or-v1-<64 hex>. Describe a key that doesn't, without revealing it, so a bad
+// paste (quotes, "Bearer ", a line break, the variable name) shows up in the logs.
+if (INCLUDED_KEY && !/^sk-or-v1-[0-9a-f]{64}$/.test(INCLUDED_KEY))
+  console.warn(
+    `[providers] OPENROUTER_API_KEY doesn't look like an OpenRouter key: ${INCLUDED_KEY.length} characters, starts "${INCLUDED_KEY.slice(0, 6).replace(/[A-Za-z0-9]/g, (c, i) => (i < 6 && /^sk-or-/.test(INCLUDED_KEY) ? c : '•'))}", ` +
+      `whitespace inside: ${/\s/.test(INCLUDED_KEY)}, quotes: ${/["']/.test(INCLUDED_KEY)}, "=" inside: ${INCLUDED_KEY.includes('=')}, "Bearer": ${/bearer/i.test(INCLUDED_KEY)}`,
+  );
 const INCLUDED_NOTE =
   'Included with the app, no key needed. Runs free models through OpenRouter (openrouter/free picks one at random). Free models are rate-limited and shared by everyone using this app, so runs can be slow or paused at busy times; adding your own key avoids that. Some free model providers may log prompts, which here include your resume.';
 
