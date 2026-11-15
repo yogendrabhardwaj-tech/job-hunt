@@ -13,6 +13,8 @@ export function SignupPage() {
   const loc = useLocation();
   const [email, setEmail] = useState(() => new URLSearchParams(loc.search).get('email') ?? '');
   const [p, setP] = useState<SignupProfile>({});
+  const [first, setFirst] = useState('');
+  const [last, setLast] = useState('');
   const [resume, setResume] = useState<File | null>(null);
   const [sentTo, setSentTo] = useState('');
   const [err, setErr] = useState('');
@@ -21,7 +23,8 @@ export function SignupPage() {
   const set = (k: keyof SignupProfile) => (e: React.ChangeEvent<HTMLInputElement>) => setP((x) => ({ ...x, [k]: e.target.value }));
 
   const send = async () => {
-    const r = await auth.start(email, 'signup', p);
+    // the profile keeps one name field, used on resumes and in greetings
+    const r = await auth.start(email, 'signup', { ...p, name: `${first.trim()} ${last.trim()}`.trim() });
     setSentTo(r.email);
   };
 
@@ -76,9 +79,14 @@ export function SignupPage() {
       >
         <FormError msg={err} />
 
-        <Field label="Full name" required>
-          <input required autoFocus autoComplete="name" value={p.name ?? ''} onChange={set('name')} className={inputCls} />
-        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="First name" required>
+            <input required autoFocus autoComplete="given-name" value={first} onChange={(e) => setFirst(e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="Last name" required>
+            <input required autoComplete="family-name" value={last} onChange={(e) => setLast(e.target.value)} className={inputCls} />
+          </Field>
+        </div>
         <Field label="Email" required hint="We’ll send a sign-in code here">
           <input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className={inputCls} />
         </Field>
