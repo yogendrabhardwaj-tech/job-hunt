@@ -19,7 +19,12 @@ import { waitUntil } from '@vercel/functions';
  */
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-export const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(ROOT, 'data');
+/** On Vercel the project folder is read-only; /tmp is the only writable place (and is wiped between instances). */
+export const DATA_DIR = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : process.env.VERCEL
+    ? '/tmp/job-hunt-data'
+    : path.join(ROOT, 'data');
 
 const hasBlobCreds = !!(process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN);
 export const backend: 'fs' | 'blob' =
@@ -91,6 +96,8 @@ async function loadBlob() {
 
 if (backend === 'blob') await loadBlob();
 else loadFs();
+if (process.env.VERCEL && backend === 'fs')
+  console.warn('[storage] No Vercel Blob store is connected, so accounts and data are lost whenever the server restarts.');
 console.log(`[storage] ${backend === 'blob' ? 'Vercel Blob (private)' : DATA_DIR} · ${mirror.size} files loaded`);
 
 // ---------------------------------------------------------------- reads

@@ -300,7 +300,12 @@ if (fs.existsSync(dist)) {
   app.get(/^\/(?!api).*/, (_req, res) => res.sendFile(path.join(dist, 'index.html')));
 }
 
-const PORT = Number(process.env.PORT || 8787);
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`\n  Job Hunt Agency API → http://localhost:${PORT}\n`);
-});
+export default app;
+
+// On Vercel the app runs as a function (api/index.ts), so it must not listen on a port.
+if (!process.env.VERCEL) {
+  const PORT = Number(process.env.PORT || 8787);
+  app.listen(PORT, '127.0.0.1', () => {
+    console.log(`\n  Job Hunt Agency API → http://localhost:${PORT}\n`);
+  });
+}
