@@ -3,15 +3,21 @@ import path from 'node:path';
 import express, { type Request, type Response } from 'express';
 import multer from 'multer';
 import * as store from './store.ts';
-import { bus, getTask, listTasks, type BusMessage } from './tasks.ts';
+import { bus, getTask, listTasks, type BusMessage, type TaggedMessage } from './tasks.ts';
+import { currentUserId } from './context.ts';
 import { fileToText, guessPostingId } from './extract.ts';
 import * as providers from './llm/providers.ts';
+import { mountAuth, requireUser } from './auth.ts';
 import { listModels, testProvider } from './llm/openai.ts';
 import * as wf from './workflows.ts';
 import { JOB_STATUSES, type Job, type JobStatus } from './types.ts';
 
 const app = express();
 app.use(express.json({ limit: '5mb' }));
+// Sign-in routes are public; everything else under /api needs a signed-in user and runs as that user.
+mountAuth(app);
+app.use('/api', (req, res, next) => (req.path === '/session/end' ? next() : requireUser(req, res, next)));
+
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
 const wrap =
@@ -30,7 +36,8 @@ const param = (req: Request, k: string) => String(req.params[k]);
 app.get('/api/events', (req, res) => {
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
   res.write(`data: ${JSON.stringify({ type: 'hello' })}\n\n`);
-  const on = (m: BusMessage) => res.write(`data: ${JSON.stringify(m)}\n\n`);
+  const me = currentUserId();
+  const on = ({ userId, ...m }: TaggedMessage) => userId === me && res.write(`data: ${JSON.stringify(m)}\n\n`);
   bus.on('msg', on);
   const ping = setInterval(() => res.write(': ping\n\n'), 20_000);
   req.on('close', () => {
@@ -293,20 +300,7 @@ if (fs.existsSync(dist)) {
   app.get(/^\/(?!api).*/, (_req, res) => res.sendFile(path.join(dist, 'index.html')));
 }
 
-// One-time migration: bring tailored copies in line with the current naming
-// (<Name>_Resume_<appId>_<postingId>.md) — e.g. after the posting-ID suffix was introduced.
-for (const job of store.listJobs()) {
-  const cur = job.tailored?.file;
-  const want = store.tailoredFileName(job.id);
-  if (!cur || cur === want || !store.resumeExists(cur) || store.resumeExists(want)) continue;
-  store.renameResume(cur, want);
-  store.updateJob(job.id, (j) => void (j.tailored!.file = want));
-  for (const a of [job.analysis, job.tailored?.analysis]) if (a?.resumeFile === cur) a.resumeFile = want;
-  store.logActivity(job.id, `Tailored resume renamed to ${want}`);
-  console.log(`  renamed ${cur} → ${want}`);
-}
-
 const PORT = Number(process.env.PORT || 8787);
 app.listen(PORT, '127.0.0.1', () => {
-  console.log(`\n  Job Hunt Agency API → http://localhost:${PORT}  (AI: ${providers.summary()})\n`);
+  console.log(`\n  Job Hunt Agency API → http://localhost:${PORT}\n`);
 });

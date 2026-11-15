@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Briefcase, CircleHelp, Cpu, FileText, LayoutDashboard, Loader2, Menu, Plus, Sparkles, UserRound, X } from 'lucide-react';
+import { Briefcase, CircleHelp, Cpu, LogOut, FileText, LayoutDashboard, Loader2, Menu, Plus, Sparkles, UserRound, X } from 'lucide-react';
 import { useLive, useProfile } from '../lib/live';
 import { api } from '../lib/api';
 import { cx } from '../lib/format';
 import { AgentPanel } from './AgentPanel';
+import { auth } from '../lib/auth';
+import { useAuth } from '../lib/useAuth';
 import { NewJobModal } from './NewJobModal';
 
 const NAV = [
@@ -19,6 +21,7 @@ const NAV = [
 export function Layout() {
   const { agentOpen, setAgentOpen, tasks } = useLive();
   const { data } = useProfile();
+  const user = useAuth();
   const [newOpen, setNewOpen] = useState(false);
   const [model, setModel] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -163,6 +166,17 @@ export function Layout() {
               <div className="truncate text-[11px] text-slate-400">{model ? `Agent · ${model}` : p?.headline}</div>
             </div>
           </NavLink>
+          <button
+            onClick={async () => {
+              await auth.logout().catch(() => {});
+              location.assign('/login');
+            }}
+            title={user ? `Signed in as ${user.email}` : undefined}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-[12.5px] text-slate-400 hover:bg-white/5 hover:text-slate-200"
+          >
+            <LogOut className="size-3.5 shrink-0" />
+            <span className="truncate">Sign out{user ? ` · ${user.email}` : ''}</span>
+          </button>
         </div>
       </nav>
 

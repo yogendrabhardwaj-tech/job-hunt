@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { nanoid } from 'nanoid';
 import type { AgentEvent, Task, TaskKind } from './types.ts';
 import { now } from './store.ts';
+import { currentUserId, maybeUserId } from './context.ts';
 
 /** Single in-process event bus; the web UI subscribes via SSE at /api/events. */
 export const bus = new EventEmitter();
@@ -13,31 +14,43 @@ export type BusMessage =
   | { type: 'job'; jobId: string }
   | { type: 'profile' };
 
-export const emit = (m: BusMessage) => bus.emit('msg', m);
+/** Every message is tagged with the user it belongs to; each browser's event stream only passes on its user's. */
+export type TaggedMessage = BusMessage & { userId?: string };
 
-const tasks = new Map<string, Task>();
+export const emit = (m: BusMessage) => bus.emit('msg', { ...m, userId: maybeUserId() } satisfies TaggedMessage);
 
-const summary = ({ events: _e, ...t }: Task) => t;
+type OwnedTask = Task & { userId: string };
+const tasks = new Map<string, OwnedTask>();
+
+const summary = ({ events: _e, userId: _u, ...t }: OwnedTask) => t;
+const mine = () => {
+  const id = currentUserId();
+  return [...tasks.values()].filter((t) => t.userId === id);
+};
 
 export function listTasks() {
-  return [...tasks.values()].map(summary).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  return mine().map(summary).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }
 
-export function getTask(id: string) {
-  return tasks.get(id);
+export function getTask(id: string): Task | undefined {
+  const t = tasks.get(id);
+  if (!t || t.userId !== currentUserId()) return undefined;
+  const { userId: _u, ...rest } = t;
+  return rest;
 }
 
 export function findRunning(kind: TaskKind, jobId?: string) {
-  return [...tasks.values()].find((t) => t.state === 'running' && t.kind === kind && t.jobId === jobId);
+  return mine().find((t) => t.state === 'running' && t.kind === kind && t.jobId === jobId);
 }
 
 export function createTask(kind: TaskKind, title: string, jobId?: string): Task {
-  const task: Task = { id: nanoid(10), kind, jobId, title, state: 'running', startedAt: now(), events: [] };
+  const task: OwnedTask = { id: nanoid(10), userId: currentUserId(), kind, jobId, title, state: 'running', startedAt: now(), events: [] };
   tasks.set(task.id, task);
-  // keep memory bounded
-  if (tasks.size > 60) {
-    const oldest = [...tasks.values()].filter((t) => t.state !== 'running').sort((a, b) => a.startedAt.localeCompare(b.startedAt));
-    for (const t of oldest.slice(0, tasks.size - 60)) tasks.delete(t.id);
+  // keep memory bounded (per user)
+  const own = mine();
+  if (own.length > 60) {
+    const oldest = own.filter((t) => t.state !== 'running').sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+    for (const t of oldest.slice(0, own.length - 60)) tasks.delete(t.id);
   }
   emit({ type: 'task', task: summary(task) });
   return task;
@@ -56,5 +69,5 @@ export function finishTask(task: Task, error?: string) {
   task.state = error ? 'error' : 'done';
   task.error = error;
   task.endedAt = now();
-  emit({ type: 'task', task: summary(task) });
+  emit({ type: 'task', task: summary(task as OwnedTask) });
 }

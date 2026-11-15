@@ -1,6 +1,7 @@
 import type { DB, Job, Profile } from './types.ts';
 import { guessPostingId } from './extract.ts';
 import * as storage from './storage.ts';
+import { currentUserId, userKey } from './context.ts';
 
 export { ROOT, DATA_DIR } from './storage.ts';
 const DB_FILE = 'db.json';
@@ -19,43 +20,57 @@ const emptyProfile = (): Profile => ({
   updatedAt: new Date().toISOString(),
 });
 
-function load(): DB {
-  const raw = storage.readText(DB_FILE);
+function load(userId: string): DB {
+  const raw = storage.readText(userKey(DB_FILE, userId));
   if (!raw) return { seq: 0, profile: emptyProfile(), jobs: [] };
-  const db = JSON.parse(raw) as DB;
-  db.profile = { ...emptyProfile(), ...db.profile };
-  return db;
+  const d = JSON.parse(raw) as DB;
+  d.profile = { ...emptyProfile(), ...d.profile };
+  return d;
 }
 
-const db: DB = load();
+/** Each user's database, loaded on first use. */
+const dbs = new Map<string, DB>();
+
+/** The signed-in user's database. */
+function db(): DB {
+  const id = currentUserId();
+  let d = dbs.get(id);
+  if (!d) dbs.set(id, (d = load(id)));
+  return d;
+}
+
+/** Drop a cached database so it's re-read from storage (after data is moved into an account). */
+export function forget(userId: string) {
+  dbs.delete(userId);
+}
 
 function persist() {
-  storage.writeText(DB_FILE, JSON.stringify(db, null, 2));
+  storage.writeText(userKey(DB_FILE), JSON.stringify(db(), null, 2));
 }
 
 export const now = () => new Date().toISOString();
 
 export function getProfile(): Profile {
-  return db.profile;
+  return db().profile;
 }
 
 export function updateProfile(patch: Partial<Profile>): Profile {
-  db.profile = { ...db.profile, ...patch, updatedAt: now() };
+  db().profile = { ...db().profile, ...patch, updatedAt: now() };
   persist();
-  return db.profile;
+  return db().profile;
 }
 
 export function listJobs(): Job[] {
-  return [...db.jobs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return [...db().jobs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 export function getJob(id: string): Job | undefined {
-  return db.jobs.find((j) => j.id === id);
+  return db().jobs.find((j) => j.id === id);
 }
 
 export function createJob(input: { url: string; jdText?: string }): Job {
-  db.seq += 1;
-  const id = `J${String(db.seq).padStart(4, '0')}`;
+  db().seq += 1;
+  const id = `J${String(db().seq).padStart(4, '0')}`;
   const job: Job = {
     id,
     url: input.url,
@@ -73,7 +88,7 @@ export function createJob(input: { url: string; jdText?: string }): Job {
     activity: [{ at: now(), text: 'Record created', kind: 'info' }],
     scan: { state: 'pending' },
   };
-  db.jobs.push(job);
+  db().jobs.push(job);
   persist();
   return job;
 }
@@ -97,7 +112,7 @@ export function logActivity(id: string, text: string, kind: Job['activity'][numb
 
 export function deleteJob(id: string) {
   const job = getJob(id);
-  db.jobs = db.jobs.filter((j) => j.id !== id);
+  db().jobs = db().jobs.filter((j) => j.id !== id);
   if (job?.tailored?.file) removeResume(job.tailored.file);
   persist();
 }
@@ -144,7 +159,7 @@ export function findDuplicates(c: { id?: string; url?: string; postingId?: strin
   const company = normCompany(c.company);
   const title = normTitle(c.title);
   const out: DuplicateMatch[] = [];
-  for (const j of db.jobs) {
+  for (const j of db().jobs) {
     if (j.id === c.id) continue;
     const sameCompany = !!company && company === normCompany(j.company);
     let reason = '';
@@ -164,7 +179,7 @@ const SAFE = /^[\w.-]+\.md$/;
 /** Storage key for a resume file; also validates the name. */
 export function resumeKey(file: string) {
   if (!SAFE.test(file)) throw new Error('Invalid resume file name');
-  return `resumes/${file}`;
+  return userKey(`resumes/${file}`);
 }
 
 export function resumeExists(file: string) {
@@ -189,19 +204,20 @@ export function renameResume(from: string, to: string) {
 
 /** Keeps a copy of an uploaded original (PDF/DOCX/…). */
 export function archiveUpload(originalName: string, data: Buffer) {
-  return storage.putBinary(`uploads/${Date.now()}_${originalName.replace(/[^\w.-]/g, '_')}`, data);
+  return storage.putBinary(`${userKey('uploads')}/${Date.now()}_${originalName.replace(/[^\w.-]/g, '_')}`, data);
 }
 
 export function readMaster(): string {
-  return readResume(db.profile.masterFile);
+  return readResume(db().profile.masterFile);
 }
 
 export function listResumeFiles() {
+  const prefix = userKey('resumes/');
   return storage
-    .listFiles('resumes/')
-    .map(({ key, size, updatedAt }) => ({ file: key.slice('resumes/'.length), size, updatedAt }))
+    .listFiles(prefix)
+    .map(({ key, size, updatedAt }) => ({ file: key.slice(prefix.length), size, updatedAt }))
     .filter(({ file }) => SAFE.test(file))
-    .map((f) => ({ ...f, master: f.file === db.profile.masterFile }))
+    .map((f) => ({ ...f, master: f.file === db().profile.masterFile }))
     .sort((a, b) => (a.master ? -1 : b.master ? 1 : b.updatedAt.localeCompare(a.updatedAt)));
 }
 
@@ -214,7 +230,7 @@ export function tailoredFileName(jobId: string) {
   const slug = (v: string, sep: string, max: number) =>
     v.trim().replace(/[^\w]+/g, sep).replace(new RegExp(`^${sep}+|${sep}+$`, 'g'), '').slice(0, max);
   const job = getJob(jobId);
-  const base = slug(db.profile.name || 'Resume', '_', 60);
+  const base = slug(db().profile.name || 'Resume', '_', 60);
   const parts = [`${base}${/resume/i.test(base) ? '' : '_Resume'}`, jobId, slug(job?.postingId ?? '', '-', 40), slug(job?.company ?? '', '_', 40)];
   return `${parts.filter(Boolean).join('_')}.md`;
 }

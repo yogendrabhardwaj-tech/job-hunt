@@ -1,6 +1,6 @@
-import { StrictMode } from 'react';
+import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { createBrowserRouter, Navigate, Outlet, RouterProvider, useLocation } from 'react-router-dom';
 import './styles.css';
 import { LiveProvider } from './lib/live';
 import { Layout } from './components/Layout';
@@ -13,10 +13,40 @@ import { PrintResume } from './pages/PrintResume';
 import { SettingsPage } from './pages/Settings';
 import { KeyHelpPage } from './pages/KeyHelp';
 import { startSession } from './lib/session';
+import { LoginPage } from './pages/Login';
+import { SignupPage } from './pages/Signup';
+import { HomePage } from './pages/Home';
+import { auth, type AuthUser } from './lib/auth';
+import { AuthContext } from './lib/useAuth';
 
 startSession();
 
+/** Everything inside needs a signed-in user; otherwise go to sign-in and come back afterwards. */
+function RequireAuth() {
+  const loc = useLocation();
+  const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
+  useEffect(() => {
+    auth.me().then(setUser).catch(() => setUser(null));
+  }, []);
+  if (user === undefined) return null; // checking; a blank frame is shorter than a flash of the sign-in page
+  // signed-out visitors to the root see the public home page; anywhere else goes to sign-in
+  if (!user && loc.pathname === '/') return <HomePage />;
+  if (!user) return <Navigate to={`/login?next=${encodeURIComponent(loc.pathname + loc.search)}`} replace />;
+  return (
+    <AuthContext.Provider value={user}>
+      <LiveProvider>
+        <Outlet />
+      </LiveProvider>
+    </AuthContext.Provider>
+  );
+}
+
 const router = createBrowserRouter([
+  { path: '/login', element: <LoginPage /> },
+  { path: '/signup', element: <SignupPage /> },
+  {
+    element: <RequireAuth />,
+    children: [
   { path: '/print/:file', element: <PrintResume /> },
   {
     element: <Layout />,
@@ -30,12 +60,12 @@ const router = createBrowserRouter([
       { path: '/help/api-keys', element: <KeyHelpPage /> },
     ],
   },
+    ],
+  },
 ]);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <LiveProvider>
-      <RouterProvider router={router} />
-    </LiveProvider>
+    <RouterProvider router={router} />
   </StrictMode>,
 );

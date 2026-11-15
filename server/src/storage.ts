@@ -29,10 +29,15 @@ const BLOB_FLUSH_MS = Number(process.env.BLOB_FLUSH_MS || 15_000);
 /** Everything goes under one prefix so the store can hold other things later. */
 const BLOB_PREFIX = (process.env.BLOB_PREFIX || 'data').replace(/\/*$/, '/');
 /** Keys holding secrets get owner-only permissions on disk. */
-const PRIVATE_KEYS = new Set(['settings.json']);
+const isPrivate = (key: string) => key.endsWith('settings.json') || key === 'users.json';
 
-/** A key is mirrored in memory when it's one of these. */
-const isMirrored = (key: string) => key === 'db.json' || key === 'settings.json' || /^resumes\/[\w.-]+\.md$/.test(key);
+/**
+ * A key is mirrored in memory when it's one of these: the user registry, or a user's db.json, settings.json or
+ * resumes/*.md under users/<id>/. Unprefixed db.json/settings.json/resumes are pre-accounts data, kept until
+ * their owner signs in and claims them.
+ */
+const isMirrored = (key: string) =>
+  key === 'users.json' || /^(users\/[\w-]+\/)?(db\.json|settings\.json|resumes\/[\w.-]+\.md)$/.test(key);
 
 interface Entry {
   content: string;
@@ -53,9 +58,15 @@ function loadFs() {
     if (!fs.existsSync(p)) return;
     mirror.set(key, { content: fs.readFileSync(p, 'utf8'), updatedAt: fs.statSync(p).mtime.toISOString() });
   };
-  take('db.json');
-  take('settings.json');
-  for (const f of fs.readdirSync(path.join(DATA_DIR, 'resumes'))) if (isMirrored(`resumes/${f}`)) take(`resumes/${f}`);
+  // walk the data folder for every mirrored file (skip uploads, which are archive-only)
+  const walk = (rel: string) => {
+    for (const ent of fs.readdirSync(path.join(DATA_DIR, rel), { withFileTypes: true })) {
+      const key = rel ? `${rel}/${ent.name}` : ent.name;
+      if (ent.isDirectory()) ent.name !== 'uploads' && walk(key);
+      else if (isMirrored(key)) take(key);
+    }
+  };
+  walk('');
 }
 
 async function loadBlob() {
@@ -107,8 +118,9 @@ let inFlight: Promise<void> = Promise.resolve();
 
 function fsWrite(key: string, content: string) {
   const p = path.join(DATA_DIR, key);
+  fs.mkdirSync(path.dirname(p), { recursive: true });
   const tmp = p + '.tmp';
-  fs.writeFileSync(tmp, content, PRIVATE_KEYS.has(key) ? { mode: 0o600 } : undefined);
+  fs.writeFileSync(tmp, content, isPrivate(key) ? { mode: 0o600 } : undefined);
   fs.renameSync(tmp, p);
 }
 
@@ -174,7 +186,10 @@ export function rename(from: string, to: string) {
 
 /** Archive-only binary files (original uploads). Written straight through; never read back by the app. */
 export async function putBinary(key: string, data: Buffer) {
-  if (backend === 'fs') fs.writeFileSync(path.join(DATA_DIR, key), data);
+  if (backend === 'fs') {
+    fs.mkdirSync(path.dirname(path.join(DATA_DIR, key)), { recursive: true });
+    fs.writeFileSync(path.join(DATA_DIR, key), data);
+  }
   else await put(BLOB_PREFIX + key, data, { access: 'private', allowOverwrite: true, addRandomSuffix: false });
 }
 
