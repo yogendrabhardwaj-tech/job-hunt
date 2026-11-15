@@ -5,14 +5,14 @@ import { currentUserId, maybeUserId, userKey } from '../context.ts';
 
 /**
  * AI sources ("providers") and the router that spreads agent runs across them.
- * Everything except `claude` speaks the OpenAI chat-completions API (OpenRouter, Hugging Face router,
+ * Everything except `claude` speaks the OpenAI chat-completions API (OpenRouter, NaraRouter, Hugging Face router,
  * Google Gemini's OpenAI endpoint, OpenAI, LM Studio). Stored in data/settings.json — API keys never leave the server.
  *
  * Bring-your-own-key: a key is written to disk only when the user opts in (`saveKey`). Otherwise it lives in
  * memory, tied to the browser tab that entered it, and is dropped when that tab closes or the server restarts.
  */
 
-export type ProviderKind = 'openrouter' | 'openai' | 'huggingface' | 'google' | 'lmstudio' | 'openai-compatible' | 'claude';
+export type ProviderKind = 'openrouter' | 'nararouter' | 'openai' | 'huggingface' | 'google' | 'lmstudio' | 'openai-compatible' | 'claude';
 
 export interface ProviderConfig {
   id: string;
@@ -67,6 +67,15 @@ export const PRESETS: Record<ProviderKind, { label: string; baseUrl: string; nee
     helpAnchor: 'openrouter',
     modelHint: 'a model ending in :free',
     note: 'Choose a model ending in ":free" that supports tools. Free models are rate-limited per account (roughly 20 requests a minute, and a small daily cap that rises after a one-time credit purchase).',
+  },
+  nararouter: {
+    label: 'NaraRouter',
+    baseUrl: 'https://router.bynara.id/v1',
+    needsKey: true,
+    keyUrl: 'https://router.bynara.id',
+    helpAnchor: 'nararouter',
+    modelHint: 'a combo such as combo/free-pack, or click Load models',
+    note: 'An OpenAI-compatible router with free models. Its "combos" bundle up to 5 models that are tried in turn, so a busy free model doesn\'t stop the run: create one under Developer → Model combos and use it as the model (combo/<name>). Keys start with sk-nry-.',
   },
   openai: {
     label: 'OpenAI',
@@ -146,53 +155,100 @@ function defaults(): Settings {
   };
 }
 
-// ---------------------------------------------------------------- included free source
+// ---------------------------------------------------------------- included free sources
 
 /**
- * When the server has OPENROUTER_API_KEY, users who haven't brought a key of their own still get AI:
- * a built-in source that runs OpenRouter's free models with the app's key. It's fallback-only, so any
- * working key the user adds is used first. Users can turn it off but can't see, change or remove the key.
+ * When the server has a key for a free router (OPENROUTER_API_KEY, NARAROUTER_API_KEY), users who haven't brought
+ * a key of their own still get AI: built-in sources that run free models with the app's key. They're fallback-only,
+ * so any working key the user adds is used first. Users can turn them off or change the model, but can't see,
+ * change or remove the key.
  */
-const INCLUDED_KEY = (process.env.OPENROUTER_API_KEY ?? '').trim();
-export const INCLUDED_ID = 'included-free';
-// OpenRouter keys look like sk-or-v1-<64 hex>. Describe a key that doesn't, without revealing it, so a bad
-// paste (quotes, "Bearer ", a line break, the variable name) shows up in the logs.
-if (INCLUDED_KEY && !/^sk-or-v1-[0-9a-f]{64}$/.test(INCLUDED_KEY))
-  console.warn(
-    `[providers] OPENROUTER_API_KEY doesn't look like an OpenRouter key: ${INCLUDED_KEY.length} characters, starts "${INCLUDED_KEY.slice(0, 6).replace(/[A-Za-z0-9]/g, (c, i) => (i < 6 && /^sk-or-/.test(INCLUDED_KEY) ? c : '•'))}", ` +
-      `whitespace inside: ${/\s/.test(INCLUDED_KEY)}, quotes: ${/["']/.test(INCLUDED_KEY)}, "=" inside: ${INCLUDED_KEY.includes('=')}, "Bearer": ${/bearer/i.test(INCLUDED_KEY)}`,
-  );
-const INCLUDED_NOTE =
-  'Included with the app, no key needed. Runs free models through OpenRouter (openrouter/free picks one at random). Free models are rate-limited and shared by everyone using this app, so runs can be slow or paused at busy times; adding your own key avoids that. Some free model providers may log prompts, which here include your resume.';
+interface Included {
+  id: string;
+  kind: ProviderKind;
+  name: string;
+  key: string;
+  model: string;
+  dailyLimit: number;
+  note: string;
+}
 
-function includedSource(): ProviderConfig {
-  return {
-    id: INCLUDED_ID,
+const env = (k: string) => (process.env[k] ?? '').trim();
+
+const INCLUDED: Included[] = [
+  {
+    id: 'included-free',
     kind: 'openrouter',
     name: 'Free models (included)',
-    baseUrl: PRESETS.openrouter.baseUrl,
+    key: env('OPENROUTER_API_KEY'),
+    model: env('OPENROUTER_FREE_MODEL') || 'openrouter/free',
+    dailyLimit: Number(env('OPENROUTER_FREE_DAILY_RUNS') || 0),
+    note: 'Included with the app, no key needed. Runs free models through OpenRouter (openrouter/free picks one at random). Free models are rate-limited and shared by everyone using this app, so runs can be slow or paused at busy times; adding your own key avoids that. Some free model providers may log prompts, which here include your resume.',
+  },
+  {
+    id: 'included-nara',
+    kind: 'nararouter',
+    name: 'NaraRouter (included)',
+    key: env('NARAROUTER_API_KEY'),
+    // a combo (combo/<name>) set up in the app owner's NaraRouter dashboard, or a single model alias
+    model: env('NARAROUTER_MODEL'),
+    dailyLimit: Number(env('NARAROUTER_DAILY_RUNS') || 0),
+    note: 'Included with the app, no key needed. Runs free models through NaraRouter, which tries each model in its combo in turn until one answers. Shared and rate-limited by everyone using this app, so runs can be slow or paused at busy times; adding your own key avoids that. Model providers may log prompts, which here include your resume.',
+  },
+];
+export const INCLUDED_ID = INCLUDED[0].id;
+
+/** Whether the app offers any free AI without a key of the user's own. */
+export const hasIncluded = () => INCLUDED.some((i) => i.key);
+
+// Describe a key that doesn't have the expected shape, without revealing it, so a bad paste (quotes, "Bearer ",
+// a line break, the variable name, another secret) shows up in the logs.
+const SHAPES: Record<string, { env: string; label: string; prefix: string; re: RegExp }> = {
+  'included-free': { env: 'OPENROUTER_API_KEY', label: 'an OpenRouter key', prefix: 'sk-or-', re: /^sk-or-v1-[0-9a-f]{64}$/ },
+  'included-nara': { env: 'NARAROUTER_API_KEY', label: 'a NaraRouter key', prefix: 'sk-nry-', re: /^sk-nry-[A-Za-z0-9_-]{16,}$/ },
+};
+for (const i of INCLUDED) {
+  const shape = SHAPES[i.id];
+  const k = i.key;
+  if (!k || shape.re.test(k)) continue;
+  console.warn(
+    `[providers] ${shape.env} doesn't look like ${shape.label}: ${k.length} characters, starts "${k.slice(0, 7).replace(/[A-Za-z0-9]/g, (c) => (k.startsWith(shape.prefix) ? c : '•'))}", ` +
+      `whitespace inside: ${/\s/.test(k)}, quotes: ${/["']/.test(k)}, "=" inside: ${k.includes('=')}, "Bearer": ${/bearer/i.test(k)}`,
+  );
+}
+if (env('NARAROUTER_API_KEY') && !env('NARAROUTER_MODEL'))
+  console.warn('[providers] NARAROUTER_API_KEY is set but NARAROUTER_MODEL is not: set it to a combo such as combo/free-pack');
+
+function includedSource(i: Included): ProviderConfig {
+  return {
+    id: i.id,
+    kind: i.kind,
+    name: i.name,
+    baseUrl: PRESETS[i.kind].baseUrl,
     apiKey: '',
     saveKey: false,
-    model: process.env.OPENROUTER_FREE_MODEL || 'openrouter/free',
+    model: i.model,
     enabled: true,
     fallbackOnly: true,
     weight: 1,
-    dailyLimit: Number(process.env.OPENROUTER_FREE_DAILY_RUNS || 0),
+    dailyLimit: i.dailyLimit,
     maxTokens: 8192,
     builtin: true,
   };
 }
 
-/** Adds the included source when the server has a key for it; hides it (without forgetting its settings) when not. */
+/** Adds each included source the server has a key for; hides the ones it doesn't. */
 function withIncluded(s: Settings): Settings {
-  const i = s.providers.findIndex((p) => p.id === INCLUDED_ID);
-  if (!INCLUDED_KEY) {
-    if (i >= 0) s.providers.splice(i, 1);
-    return s;
+  // in reverse, so they end up in INCLUDED order at the front: tried before a paid fallback such as the Claude plan
+  for (const inc of [...INCLUDED].reverse()) {
+    const i = s.providers.findIndex((p) => p.id === inc.id);
+    if (!inc.key) {
+      if (i >= 0) s.providers.splice(i, 1);
+      continue;
+    }
+    if (i < 0) s.providers.unshift(includedSource(inc));
+    else s.providers[i] = { ...includedSource(inc), ...s.providers[i], apiKey: '', saveKey: false, builtin: true };
   }
-  // first among the fallbacks, so it's tried before a paid fallback such as the Claude plan
-  if (i < 0) s.providers.unshift(includedSource());
-  else s.providers[i] = { ...includedSource(), ...s.providers[i], apiKey: '', saveKey: false, builtin: true };
   return s;
 }
 
@@ -294,7 +350,9 @@ function dropSessionKeys(providerId: string) {
 
 /** The key in effect for a source: the saved one, else one entered in an open browser tab. */
 export function keyFor(p: Pick<ProviderConfig, 'apiKey'> & { id?: string; builtin?: boolean }): string {
-  if (p.builtin || p.id === INCLUDED_ID) return INCLUDED_KEY;
+  const inc = INCLUDED.find((i) => i.id === p.id);
+  if (inc) return inc.key;
+  if (p.builtin) return '';
   return p.apiKey || (p.id ? sessionKey(p.id) : '');
 }
 
@@ -427,7 +485,7 @@ export function publicSettings() {
       return {
         ...rest,
         builtin: !!p.builtin,
-        note: p.builtin ? INCLUDED_NOTE : undefined,
+        note: p.builtin ? INCLUDED.find((i) => i.id === p.id)?.note : undefined,
         apiKeySet: !!key,
         keySaved: !!apiKey,
         keyInSession: !apiKey && !!key && !p.builtin,

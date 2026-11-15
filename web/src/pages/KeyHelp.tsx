@@ -15,13 +15,14 @@ export function KeyHelpPage() {
 
   return (
     <div className="mx-auto max-w-[820px] px-4 py-8 sm:px-8">
-      <PageHeader title="Getting an API key" sub="Bring your own key from Google AI Studio, OpenAI or OpenRouter. Each takes a few minutes to set up." />
+      <PageHeader title="Getting an API key" sub="Bring your own key from Google AI Studio, OpenAI, OpenRouter or NaraRouter. Each takes a few minutes to set up." />
 
       <nav aria-label="On this page" className="mb-6 flex flex-wrap gap-2 text-sm">
         {[
           ['google', 'Google AI Studio'],
           ['openai', 'OpenAI'],
           ['openrouter', 'OpenRouter'],
+          ['nararouter', 'NaraRouter'],
           ['privacy', 'How your key is handled'],
         ].map(([id, label]) => (
           <a key={id} href={`#${id}`} className="rounded-full bg-white px-3 py-1 font-medium text-slate-700 ring-1 ring-inset ring-slate-200 hover:bg-slate-50">
@@ -31,7 +32,7 @@ export function KeyHelpPage() {
       </nav>
 
       <Callout tone="info" title="Don’t have a key? You don’t need one to start">
-        When the app comes with free models included, they’re used automatically until you add a key of your own. They run through OpenRouter, are shared
+        When the app comes with free models included, they’re used automatically until you add a key of your own. They run through OpenRouter or NaraRouter, are shared
         by everyone using the app, and are rate-limited, so they can be slow or briefly unavailable. Your own key, even a free Google AI Studio one, is
         faster and more reliable.
       </Callout>
@@ -124,6 +125,30 @@ export function KeyHelpPage() {
           <Step n={3} title="Add it here">
             In <Link to="/settings" className="font-medium text-brand-700 hover:underline">AI sources</Link>, click <b>OpenRouter</b>, paste the key, and use{' '}
             <b>Load models</b> to pick a free model that supports tools.
+          </Step>
+        </Steps>
+      </Section>
+
+      {/* ------------------------------------------------------------ NaraRouter */}
+      <Section id="nararouter" title="NaraRouter" badge="Free models available">
+        <p>
+          NaraRouter is another router with free models. Its <b>combos</b> bundle up to five models that are tried in turn, so when one free model is busy
+          the next one answers instead.
+        </p>
+        <Steps>
+          <Step n={1} title="Sign in">
+            Go to <ExtLink href="https://router.bynara.id">router.bynara.id</ExtLink> and sign in or create an account.
+          </Step>
+          <Step n={2} title="Create the key">
+            Create an API key in the dashboard and copy it straight away; it’s shown only once. It starts with <Code>sk-nry-</Code>.
+          </Step>
+          <Step n={3} title="Make a combo (recommended)">
+            Under <b>Developer → Model combos</b>, add a few free models that support tools, in the order to try them. Its model id is{' '}
+            <Code>combo/&lt;name&gt;</Code>, for example <Code>combo/free-pack</Code>.
+          </Step>
+          <Step n={4} title="Add it here">
+            In <Link to="/settings" className="font-medium text-brand-700 hover:underline">AI sources</Link>, add <b>NaraRouter</b>, paste the key, and type
+            your combo as the model, or use <b>Load models</b> to pick a single model.
           </Step>
         </Steps>
       </Section>

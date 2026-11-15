@@ -28,7 +28,7 @@ export function AuthLinkPage() {
         <>
           <FormError msg={err} />
           <Link to="/login" className="text-sm font-medium text-brand-700 hover:underline">
-            Get a new code
+            Get a new link
           </Link>
         </>
       ) : (

@@ -74,7 +74,7 @@ export function HomePage() {
                 </Link>
               </div>
               <p className="mt-4 flex items-center gap-1.5 text-sm text-slate-500">
-                <MailCheck className="size-4" /> No password. Sign in with a code we email you.
+                <MailCheck className="size-4" /> No password. Sign in with a link we email you.
               </p>
             </div>
 

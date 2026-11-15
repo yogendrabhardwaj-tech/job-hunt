@@ -93,7 +93,7 @@ ${button}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
   <tr><td align="center" style="background:${b.tint};border:1px solid #e0e7ff;border-radius:12px;padding:22px 12px;">
     <div style="font-family:'SF Mono',SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;font-size:34px;line-height:1;font-weight:700;letter-spacing:0.18em;color:${b.ink};">${spaced}</div>
-    <div style="margin-top:10px;font-size:12px;line-height:1.4;color:${b.muted};">${link ? 'The link and code expire' : 'Expires'} in 10&nbsp;minutes</div>
+    <div style="margin-top:10px;font-size:12px;line-height:1.4;color:${b.muted};">${link ? 'The button works for 5&nbsp;minutes, the code for 10' : 'Expires in 10&nbsp;minutes'}</div>
   </td></tr>
 </table>
 
@@ -112,7 +112,7 @@ Your AI career agent: match scores, tailored resumes and interview prep.`;
     link ? 'Or enter this code on the sign-in page:' : '',
     `    ${code}`,
     '',
-    `This ${link ? 'link and code expire' : 'code expires'} in 10 minutes.`,
+    link ? 'The link works for 5 minutes, the code for 10.' : 'This code expires in 10 minutes.',
     '',
     `Didn't ask for this? You can safely ignore this email. Nobody can ${signup ? 'create an account' : 'sign in'} without it. Don't share the link or code.`,
     '',
