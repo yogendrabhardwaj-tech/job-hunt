@@ -16,6 +16,8 @@ import {
   FileText,
   Flag,
   GraduationCap,
+  Loader2,
+  MinusSquare,
   Highlighter,
   Lightbulb,
   Mail,
@@ -189,7 +191,10 @@ export function JobWorkspace() {
       <div className="mt-5">
         {!job.details ? (
           scanning || job.scan.state === 'pending' || job.scan.state === 'running' ? (
-            <ScanningState />
+            <>
+              <ScanningState />
+              <ScanOverlay job={job} taskId={running.find((t) => t.kind === 'scan')?.id} />
+            </>
           ) : job.scan.state === 'error' ? (
             <ScanFailed job={job} />
           ) : (
@@ -768,6 +773,51 @@ function NotesTab({ job }: { job: Job }) {
 }
 
 // ======================================================================== states
+
+/**
+ * Full-screen "Scanning role…" while a new role is read, with the latest step. "Run in background" (or Escape)
+ * hides it without stopping the scan; a notice appears when that scan finishes.
+ */
+function ScanOverlay({ job, taskId }: { job: Job; taskId?: string }) {
+  const { backgroundScans, sendScanToBackground, taskEvents } = useLive();
+  const [secs, setSecs] = useState(0);
+  const hidden = backgroundScans.has(job.id);
+  useEffect(() => {
+    if (hidden) return;
+    const t = setInterval(() => setSecs((x) => x + 1), 1000);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && sendScanToBackground(job.id);
+    window.addEventListener('keydown', esc);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener('keydown', esc);
+    };
+  }, [hidden, job.id, sendScanToBackground]);
+  if (hidden) return null;
+
+  const steps = (taskId && taskEvents[taskId]) || [];
+  const step = [...steps].reverse().find((e) => e.type === 'status' || e.type === 'tool')?.text;
+  const source = job.url ? hostname(job.url) : 'the pasted description';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="scan-title">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-2xl ring-1 ring-slate-200">
+        <Loader2 className="mx-auto size-10 animate-spin text-brand-600" aria-hidden />
+        <h2 id="scan-title" className="mt-4 text-base font-semibold text-slate-900">
+          Scanning role…
+        </h2>
+        <p className="mt-1 truncate text-sm text-slate-600">Reading {source}</p>
+        <p className="mt-3 flex min-h-[1.25rem] justify-center gap-1 text-xs text-slate-500">
+          <span className="min-w-0 truncate" aria-live="polite">{step ?? 'Starting'}</span>
+          <span className="shrink-0 tabular-nums">· {secs}s</span>
+        </p>
+        <p className="mt-4 text-xs text-slate-500">This usually takes under a minute. You can keep working while it runs, and we’ll tell you when it’s done.</p>
+        <Button variant="primary" className="mt-4 w-full" onClick={() => sendScanToBackground(job.id)} autoFocus>
+          <MinusSquare className="size-4" /> Run in background
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function ScanningState() {
   return (
