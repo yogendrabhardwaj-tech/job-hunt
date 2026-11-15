@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Briefcase, Cpu, FileText, LayoutDashboard, Loader2, Menu, Plus, Sparkles, UserRound, X } from 'lucide-react';
+import { Briefcase, CircleHelp, Cpu, FileText, LayoutDashboard, Loader2, Menu, Plus, Sparkles, UserRound, X } from 'lucide-react';
 import { useLive, useProfile } from '../lib/live';
 import { api } from '../lib/api';
 import { cx } from '../lib/format';
@@ -13,6 +13,7 @@ const NAV = [
   { to: '/resumes', label: 'Resume library', icon: FileText },
   { to: '/profile', label: 'Profile & master', icon: UserRound },
   { to: '/settings', label: 'AI sources', icon: Cpu },
+  { to: '/help/api-keys', label: 'API key help', icon: CircleHelp },
 ];
 
 export function Layout() {

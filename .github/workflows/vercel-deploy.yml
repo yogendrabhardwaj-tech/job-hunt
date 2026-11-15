@@ -1,0 +1,63 @@
+# Deploys the web app to Vercel.
+#   - Pull request → preview deployment (URL in the run summary)
+#   - Push to main  → production deployment
+# Vercel's own Git auto-deploys are turned off in vercel.json so each push deploys once.
+#
+# One-time setup: add a repository secret VERCEL_TOKEN (create it at https://vercel.com/account/tokens).
+
+name: Deploy to Vercel
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vercel-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Not secret: these identify the project, the token is what grants access.
+  VERCEL_ORG_ID: team_xW2T4bCOTa1JtZpOcrOGZyli
+  VERCEL_PROJECT_ID: prj_bp0kbzaz2hITvaCWcj4wigTLZENe
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+
+      - name: Pick target
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "env=production" >> "$GITHUB_OUTPUT"; echo "flag=--prod" >> "$GITHUB_OUTPUT"
+          else
+            echo "env=preview" >> "$GITHUB_OUTPUT"; echo "flag=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Pull Vercel settings
+        run: npx --yes vercel@latest pull --yes --environment=${{ steps.target.outputs.env }} --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build
+        run: npx --yes vercel@latest build ${{ steps.target.outputs.flag }} --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy
+        id: deploy
+        run: |
+          url=$(npx --yes vercel@latest deploy --prebuilt ${{ steps.target.outputs.flag }} --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "### Deployed to Vercel (${{ steps.target.outputs.env }})" >> "$GITHUB_STEP_SUMMARY"
+          echo "$url" >> "$GITHUB_STEP_SUMMARY"

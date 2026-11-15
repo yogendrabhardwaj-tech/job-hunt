@@ -1,16 +1,9 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { DB, Job, Profile } from './types.ts';
 import { guessPostingId } from './extract.ts';
+import * as storage from './storage.ts';
 
-export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-export const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(ROOT, 'data');
-export const RESUME_DIR = path.join(DATA_DIR, 'resumes');
-export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
-const DB_FILE = path.join(DATA_DIR, 'db.json');
-
-for (const d of [DATA_DIR, RESUME_DIR, UPLOAD_DIR]) fs.mkdirSync(d, { recursive: true });
+export { ROOT, DATA_DIR } from './storage.ts';
+const DB_FILE = 'db.json';
 
 const emptyProfile = (): Profile => ({
   name: '',
@@ -27,8 +20,9 @@ const emptyProfile = (): Profile => ({
 });
 
 function load(): DB {
-  if (!fs.existsSync(DB_FILE)) return { seq: 0, profile: emptyProfile(), jobs: [] };
-  const db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')) as DB;
+  const raw = storage.readText(DB_FILE);
+  if (!raw) return { seq: 0, profile: emptyProfile(), jobs: [] };
+  const db = JSON.parse(raw) as DB;
   db.profile = { ...emptyProfile(), ...db.profile };
   return db;
 }
@@ -36,9 +30,7 @@ function load(): DB {
 const db: DB = load();
 
 function persist() {
-  const tmp = DB_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
-  fs.renameSync(tmp, DB_FILE);
+  storage.writeText(DB_FILE, JSON.stringify(db, null, 2));
 }
 
 export const now = () => new Date().toISOString();
@@ -106,10 +98,7 @@ export function logActivity(id: string, text: string, kind: Job['activity'][numb
 export function deleteJob(id: string) {
   const job = getJob(id);
   db.jobs = db.jobs.filter((j) => j.id !== id);
-  if (job?.tailored?.file) {
-    const f = path.join(RESUME_DIR, job.tailored.file);
-    if (fs.existsSync(f)) fs.unlinkSync(f);
-  }
+  if (job?.tailored?.file) removeResume(job.tailored.file);
   persist();
 }
 
@@ -172,23 +161,35 @@ export function findDuplicates(c: { id?: string; url?: string; postingId?: strin
 
 const SAFE = /^[\w.-]+\.md$/;
 
-export function resumePath(file: string) {
+/** Storage key for a resume file; also validates the name. */
+export function resumeKey(file: string) {
   if (!SAFE.test(file)) throw new Error('Invalid resume file name');
-  return path.join(RESUME_DIR, file);
+  return `resumes/${file}`;
+}
+
+export function resumeExists(file: string) {
+  return storage.exists(resumeKey(file));
 }
 
 export function readResume(file: string): string {
-  const p = resumePath(file);
-  return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '';
+  return storage.readText(resumeKey(file)) ?? '';
 }
 
 export function writeResume(file: string, content: string) {
-  fs.writeFileSync(resumePath(file), content.trimEnd() + '\n');
+  storage.writeText(resumeKey(file), content.trimEnd() + '\n');
 }
 
 export function removeResume(file: string) {
-  const p = resumePath(file);
-  if (fs.existsSync(p)) fs.unlinkSync(p);
+  storage.remove(resumeKey(file));
+}
+
+export function renameResume(from: string, to: string) {
+  storage.rename(resumeKey(from), resumeKey(to));
+}
+
+/** Keeps a copy of an uploaded original (PDF/DOCX/…). */
+export function archiveUpload(originalName: string, data: Buffer) {
+  return storage.putBinary(`uploads/${Date.now()}_${originalName.replace(/[^\w.-]/g, '_')}`, data);
 }
 
 export function readMaster(): string {
@@ -196,13 +197,11 @@ export function readMaster(): string {
 }
 
 export function listResumeFiles() {
-  return fs
-    .readdirSync(RESUME_DIR)
-    .filter((f) => SAFE.test(f))
-    .map((f) => {
-      const st = fs.statSync(path.join(RESUME_DIR, f));
-      return { file: f, size: st.size, updatedAt: st.mtime.toISOString(), master: f === db.profile.masterFile };
-    })
+  return storage
+    .listFiles('resumes/')
+    .map(({ key, size, updatedAt }) => ({ file: key.slice('resumes/'.length), size, updatedAt }))
+    .filter(({ file }) => SAFE.test(file))
+    .map((f) => ({ ...f, master: f.file === db.profile.masterFile }))
     .sort((a, b) => (a.master ? -1 : b.master ? 1 : b.updatedAt.localeCompare(a.updatedAt)));
 }
 

@@ -1,14 +1,24 @@
 import { useEffect, useState } from 'react';
-import { ArrowDown, ArrowUp, CircleAlert, CircleCheck, ExternalLink, KeyRound, Pencil, Plus, RefreshCw, Trash2, Zap } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ArrowDown, ArrowUp, CircleAlert, CircleCheck, CircleHelp, ExternalLink, KeyRound, Pencil, Plus, RefreshCw, Trash2, Zap } from 'lucide-react';
 import { api } from '../lib/api';
 import { PageHeader } from '../components/Layout';
 import { Button, Card, SectionTitle, Skeleton, inputCls } from '../components/ui';
 import { cx, timeAgo } from '../lib/format';
 import type { AISettings, ModelInfo, ProviderConfig, ProviderKind } from '../lib/types';
 
-const ADDABLE: ProviderKind[] = ['openrouter', 'huggingface', 'google', 'lmstudio', 'openai-compatible', 'claude'];
+const ADDABLE: ProviderKind[] = ['openrouter', 'openai', 'huggingface', 'google', 'lmstudio', 'openai-compatible', 'claude'];
 
 type Draft = Partial<ProviderConfig> & { kind: ProviderKind; apiKey?: string };
+
+/** Bring-your-own-key shortcuts shown at the top of the page. */
+const BYOK: { kind: ProviderKind; blurb: string }[] = [
+  { kind: 'google', blurb: 'Gemini models. Free tier, no card needed.' },
+  { kind: 'openai', blurb: 'GPT models. Paid per use; needs billing credit.' },
+  { kind: 'openrouter', blurb: 'Hundreds of models, including free ones.' },
+];
+
+const helpHref = (anchor?: string) => `/help/api-keys${anchor ? `#${anchor}` : ''}`;
 
 export function SettingsPage() {
   const [s, setS] = useState<AISettings>();
@@ -69,6 +79,41 @@ export function SettingsPage() {
       )}
 
       <Card className="mb-6 p-5">
+        <SectionTitle
+          right={
+            <Link to={helpHref('google')} className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline">
+              <CircleHelp className="size-3.5" /> How to get a Google AI Studio key
+            </Link>
+          }
+        >
+          Bring your own key
+        </SectionTitle>
+        <p className="mt-2 text-sm text-slate-600">
+          Use your own account with one of these services. Keys stay on this computer and are sent only to the service they belong to. Unless you choose
+          to save a key, it’s forgotten when you close this tab.
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          {BYOK.map(({ kind, blurb }) => {
+            const have = s.providers.filter((p) => p.kind === kind);
+            return (
+              <button
+                key={kind}
+                disabled={!!adding}
+                onClick={() => setAdding(kind)}
+                className="rounded-lg p-3 text-left ring-1 ring-inset ring-slate-200 transition hover:bg-slate-50 disabled:opacity-60"
+              >
+                <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+                  <KeyRound className="size-3.5 text-brand-600" /> {s.presets[kind].label}
+                </div>
+                <div className="mt-0.5 text-xs text-slate-600">{blurb}</div>
+                <div className="mt-1.5 text-xs font-medium text-brand-700">{have.length ? `Add another (${have.length} set up)` : 'Add key'}</div>
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+
+      <Card className="mb-6 p-5">
         <SectionTitle>How runs are shared</SectionTitle>
         <div className="mt-3 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Routing strategy">
           {(
@@ -125,6 +170,9 @@ export function SettingsPage() {
               onToggle={() => act(() => api.updateSource(p.id, { enabled: !p.enabled }))}
               onDelete={() => confirm(`Remove ${p.name}?`) && act(() => api.deleteSource(p.id))}
               onTested={load}
+              onKey={(apiKey, saveKey) => act(() => api.updateSource(p.id, { apiKey, saveKey }))}
+              onSaveKey={() => act(() => api.updateSource(p.id, { saveKey: true }))}
+              onForgetKey={() => confirm(`Forget the API key for ${p.name}? You'll need to enter it again to use this source.`) && act(() => api.forgetKey(p.id))}
             />
           ),
         )}
@@ -132,7 +180,7 @@ export function SettingsPage() {
         {adding && (
           <SourceEditor
             settings={s}
-            initial={{ kind: adding, name: s.presets[adding].label, baseUrl: s.presets[adding].baseUrl, weight: adding === 'lmstudio' ? 3 : 1, maxTokens: 8192, dailyLimit: 0, enabled: true, fallbackOnly: adding === 'claude' }}
+            initial={{ kind: adding, name: s.presets[adding].label, baseUrl: s.presets[adding].baseUrl, weight: adding === 'lmstudio' ? 3 : 1, maxTokens: 8192, dailyLimit: 0, enabled: true, fallbackOnly: adding === 'claude', saveKey: false }}
             onCancel={() => setAdding(null)}
             onSave={async (d) => {
               if (await act(() => api.addSource(d))) setAdding(null);
@@ -170,6 +218,9 @@ function SourceRow({
   onToggle,
   onDelete,
   onTested,
+  onKey,
+  onSaveKey,
+  onForgetKey,
 }: {
   p: ProviderConfig;
   s: AISettings;
@@ -180,7 +231,11 @@ function SourceRow({
   onToggle: () => void;
   onDelete: () => void;
   onTested: () => void;
+  onKey: (apiKey: string, saveKey: boolean) => Promise<boolean>;
+  onSaveKey: () => void;
+  onForgetKey: () => void;
 }) {
+  const preset = s.presets[p.kind];
   const [test, setTest] = useState<Awaited<ReturnType<typeof api.testSource>> | 'running' | null>(null);
   const u = p.usage;
   const tokens = u.promptTokens + u.completionTokens;
@@ -226,6 +281,23 @@ function SourceRow({
             {s.strategy === 'balanced' && !p.fallbackOnly && <span>Weight {p.weight}</span>}
             {u.lastUsed && <span>Last used {timeAgo(u.lastUsed)}</span>}
           </div>
+          {preset.needsKey && p.apiKeySet && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
+              <span className="inline-flex items-center gap-1">
+                <KeyRound className="size-3" />
+                {p.keySaved ? 'Key saved on this computer' : 'Key kept for this session only'} <span className="font-mono">{p.apiKeyHint}</span>
+              </span>
+              {p.keyInSession && (
+                <button onClick={onSaveKey} className="font-medium text-brand-700 hover:underline">
+                  Save it so you don’t have to enter it again?
+                </button>
+              )}
+              <button onClick={onForgetKey} className="font-medium text-slate-500 hover:text-rose-700 hover:underline">
+                Forget key
+              </button>
+            </div>
+          )}
+          {preset.needsKey && p.enabled && !p.apiKeySet && <SessionKeyPrompt p={p} helpAnchor={preset.helpAnchor} onKey={onKey} />}
           {u.lastError && (
             <p className="mt-1.5 line-clamp-2 text-xs text-rose-700" title={u.lastError}>
               Last error{u.lastErrorAt ? ` (${timeAgo(u.lastErrorAt)})` : ''}: {u.lastError}
@@ -321,11 +393,18 @@ function SourceEditor({ settings, initial, onSave, onCancel }: { settings: AISet
     <Card className="p-5 ring-2 ring-brand-500/40">
       <div className="flex items-center justify-between gap-2">
         <div className="text-sm font-semibold text-slate-900">{initial.id ? `Edit ${initial.name}` : `Add ${preset.label}`}</div>
-        {preset.keyUrl && (
-          <a href={preset.keyUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline">
-            <KeyRound className="size-3.5" /> Get a free key <ExternalLink className="size-3" />
-          </a>
-        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {preset.helpAnchor && (
+            <Link to={helpHref(preset.helpAnchor)} className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline">
+              <CircleHelp className="size-3.5" /> How do I get a key?
+            </Link>
+          )}
+          {preset.keyUrl && (
+            <a href={preset.keyUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline">
+              <KeyRound className="size-3.5" /> {d.kind === 'openai' ? 'Get a key' : 'Get a free key'} <ExternalLink className="size-3" />
+            </a>
+          )}
+        </div>
       </div>
       <p className="mt-1 text-xs text-slate-600">{preset.note}</p>
 
@@ -345,7 +424,13 @@ function SourceEditor({ settings, initial, onSave, onCancel }: { settings: AISet
               autoComplete="off"
               value={d.apiKey ?? ''}
               onChange={(e) => set('apiKey', e.target.value)}
-              placeholder={saved?.apiKeySet ? `Saved (${saved.apiKeyHint}). Leave empty to keep it` : preset.needsKey ? 'Paste your key' : 'Not needed for local servers'}
+              placeholder={
+                saved?.apiKeySet
+                  ? `${saved.keySaved ? 'Saved' : 'Set for this session'} (${saved.apiKeyHint}). Leave empty to keep it`
+                  : preset.needsKey
+                    ? 'Paste your key'
+                    : 'Not needed for local servers'
+              }
               className={inputCls + ' font-mono text-[12.5px]'}
             />
           </Field>
@@ -395,6 +480,13 @@ function SourceEditor({ settings, initial, onSave, onCancel }: { settings: AISet
             </Field>
           </>
         )}
+        {!isClaude && (
+          <SaveKeyChoice
+            className="sm:col-span-2"
+            checked={!!d.saveKey}
+            onChange={(v) => set('saveKey', v)}
+          />
+        )}
         <label className="flex items-start gap-2 self-end pb-2 text-sm text-slate-700">
           <input type="checkbox" checked={!!d.fallbackOnly} onChange={(e) => set('fallbackOnly', e.target.checked)} className="mt-0.5 size-4 accent-brand-600" />
           <span>
@@ -433,5 +525,69 @@ function Field({ label, hint, className, children }: { label: string; hint?: str
       </span>
       {children}
     </label>
+  );
+}
+
+// ---------------------------------------------------------------- bring-your-own-key helpers
+
+function SaveKeyChoice({ checked, onChange, className }: { checked: boolean; onChange: (v: boolean) => void; className?: string }) {
+  return (
+    <label className={cx('flex items-start gap-2 rounded-lg bg-slate-50 p-3 text-sm text-slate-700 ring-1 ring-inset ring-slate-200', className)}>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-0.5 size-4 accent-brand-600" />
+      <span>
+        Save this key on this computer?
+        <span className="block text-xs text-slate-500">
+          {checked
+            ? 'The key is stored in this app’s data folder (data/settings.json) and used until you forget it.'
+            : 'Off: the key is kept in memory only and forgotten when you close this tab or restart the app. You’ll be asked for it next time.'}
+        </span>
+      </span>
+    </label>
+  );
+}
+
+/** Shown on a source whose key isn't saved and hasn't been entered in this session yet. */
+function SessionKeyPrompt({ p, helpAnchor, onKey }: { p: ProviderConfig; helpAnchor?: string; onKey: (apiKey: string, saveKey: boolean) => Promise<boolean> }) {
+  const [key, setKey] = useState('');
+  const [save, setSave] = useState(false);
+  const [busy, setBusy] = useState(false);
+  return (
+    <form
+      className="mt-2 rounded-lg bg-amber-50/60 p-3 ring-1 ring-inset ring-amber-200"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (!key.trim()) return;
+        setBusy(true);
+        if (await onKey(key.trim(), save)) setKey('');
+        setBusy(false);
+      }}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-medium text-amber-900">
+        <span>Enter your {p.name} key to use this source.</span>
+        {helpAnchor && (
+          <Link to={helpHref(helpAnchor)} className="inline-flex items-center gap-1 text-brand-700 hover:underline">
+            <CircleHelp className="size-3.5" /> Where do I find it?
+          </Link>
+        )}
+      </div>
+      <div className="mt-2 flex gap-2">
+        <input
+          type="password"
+          autoComplete="off"
+          aria-label={`${p.name} API key`}
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="Paste your key"
+          className={inputCls + ' font-mono text-[12.5px]'}
+        />
+        <Button type="submit" variant="primary" size="sm" className="h-9" loading={busy} disabled={!key.trim()}>
+          Use key
+        </Button>
+      </div>
+      <label className="mt-2 flex items-center gap-2 text-xs text-slate-700">
+        <input type="checkbox" checked={save} onChange={(e) => setSave(e.target.checked)} className="size-3.5 accent-brand-600" />
+        Also save it on this computer (otherwise it’s forgotten when you close this tab)
+      </label>
+    </form>
   );
 }
