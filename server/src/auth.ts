@@ -96,10 +96,23 @@ const USERS = 'users.json';
 const users = (): User[] => JSON.parse(storage.readText(USERS) ?? '[]');
 const findUser = (email: string) => users().find((u) => u.email === email);
 
-function createUser(email: string): User {
-  const u: User = { id: nanoid(12).replace(/[^\w-]/g, ''), email, createdAt: new Date().toISOString() };
-  storage.writeText(USERS, JSON.stringify([...users(), u], null, 2));
-  return u;
+/**
+ * Adds an account. Reads the latest users list from Blob and saves right away (only if nobody else saved in
+ * between), so a server instance holding an older copy can never drop other accounts.
+ */
+async function createUser(email: string): Promise<User> {
+  let u: User | undefined;
+  await storage.update(USERS, (raw) => {
+    const list: User[] = JSON.parse(raw ?? '[]');
+    u = list.find((x) => x.email === email) ?? { id: nanoid(12).replace(/[^\w-]/g, ''), email, createdAt: new Date().toISOString() };
+    return JSON.stringify(list.includes(u) ? list : [...list, u], null, 2);
+  });
+  return u!;
+}
+
+/** Finds an account, re-reading the users list from Blob if this instance doesn't know it yet. */
+async function findUserFresh(email: string) {
+  return findUser(email) ?? ((await storage.refresh(USERS)) ? findUser(email) : undefined);
 }
 
 export const normEmail = (e: unknown) => String(e ?? '').trim().toLowerCase();
@@ -136,12 +149,12 @@ function claimLegacyData(u: User) {
  * Gives the pre-accounts data to a chosen email (used by `npm run claim-data`), creating the account if needed.
  * Refuses if that account already has its own data, so nothing is overwritten.
  */
-export function attachExistingData(rawEmail: string) {
+export async function attachExistingData(rawEmail: string) {
   const email = normEmail(rawEmail);
   if (!validEmail(email)) throw new Error(`Not a valid email: ${rawEmail}`);
   const keys = legacyKeys();
   if (!keys.length) throw new Error('There is no unclaimed data to attach');
-  const user = findUser(email) ?? createUser(email);
+  const user = (await findUserFresh(email)) ?? (await createUser(email));
   const clash = keys.filter((k) => storage.exists(userKey(k, user.id)));
   if (clash.length) throw new Error(`${email} already has its own ${clash.join(', ')}; not overwriting`);
   claimLegacyData(user);
@@ -151,17 +164,22 @@ export function attachExistingData(rawEmail: string) {
 // ---------------------------------------------------------------- email
 
 /**
- * Link shown in emails. Never taken from the request (a forged Origin would put someone else's link in a real
- * email): APP_URL if set, else the Vercel production domain, else the local dev address.
+ * Address used for links in emails. Never taken from the request (a forged Origin would put someone else's link
+ * in a real email). APP_URL if set; on Vercel, the address of the deployment that sent the email (production
+ * domain in production, the branch address on previews); locally, the dev server.
  */
 function appUrl(): string | undefined {
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, '');
-  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
-  if (!process.env.VERCEL) return 'http://localhost:5173';
+  const e = process.env;
+  if (e.APP_URL) return e.APP_URL.replace(/\/+$/, '');
+  if (!e.VERCEL) return 'http://localhost:5173';
+  const host = e.VERCEL_ENV === 'production' ? e.VERCEL_PROJECT_PRODUCTION_URL : e.VERCEL_BRANCH_URL || e.VERCEL_URL;
+  if (host) return `https://${host}`;
 }
 
-async function sendCode(email: string, code: string, purpose: 'login' | 'signup') {
-  const { subject, text, html } = codeEmail({ code, purpose, to: email, appUrl: appUrl() });
+async function sendCode(email: string, code: string, purpose: 'login' | 'signup', linkToken: string) {
+  const base = appUrl();
+  const link = base ? `${base}/auth/link?t=${encodeURIComponent(linkToken)}` : undefined;
+  const { subject, text, html } = codeEmail({ code, purpose, to: email, appUrl: base, link });
 
   // 1) SMTP (e.g. Brevo's relay) when a password is configured
   if (process.env.SMTP_PASS) return sendSmtp(email, subject, text, html);
@@ -171,7 +189,7 @@ async function sendCode(email: string, code: string, purpose: 'login' | 'signup'
   if (!key) {
     if (process.env.VERCEL) throw new Error('Email sending is not configured on this server');
     // local development without an email service: show the code in the server log
-    console.log(`\n  [auth] ${purpose} code for ${email}: ${code}  (set SMTP_PASS to send real emails)\n`);
+    console.log(`\n  [auth] ${purpose} code for ${email}: ${code}${link ? `\n  [auth] link: ${link}` : ''}  (set SMTP_PASS to send real emails)\n`);
     return;
   }
   const res = await fetch('https://api.resend.com/emails', {
@@ -249,7 +267,7 @@ function limited(key: string, max: number, windowMs: number) {
   return list.length > max;
 }
 
-const attempts = new Map<string, { n: number; exp: number }>();
+const attempts = new Map<string, { n: number; exp: number; used?: boolean }>();
 setInterval(() => {
   const t = Date.now();
   for (const [k, v] of attempts) if (v.exp < t) attempts.delete(k);
@@ -262,6 +280,16 @@ interface Session {
   uid: string;
   email: string;
   exp: number;
+}
+
+/** The one-click sign-in link in the email: the same sign-in as the code, usable from any browser. */
+interface LinkToken {
+  k: 'link';
+  email: string;
+  mode: 'login' | 'signup';
+  nonce: string;
+  exp: number;
+  profile?: SignupProfile;
 }
 
 interface Pending {
@@ -290,19 +318,54 @@ function cleanProfile(input: any): SignupProfile {
   return out;
 }
 
-export function sessionUser(req: Request): UserCtx | undefined {
+const hasUser = (id: string) => users().some((u) => u.id === id);
+
+export async function sessionUser(req: Request): Promise<UserCtx | undefined> {
   const s = unsign<Session>(readCookie(req, SESSION_COOKIE));
-  if (!s || s.exp < Date.now()) return;
-  // the account must still exist
-  if (!users().some((u) => u.id === s.uid)) return;
+  if (!s || typeof s.uid !== 'string' || s.exp < Date.now()) return;
+  // The account must still exist. This instance's copy of the list may predate the account (another instance
+  // created it), so look again in Blob before saying no.
+  if (!hasUser(s.uid) && !((await storage.refresh(USERS)) && hasUser(s.uid))) return;
   return { userId: s.uid, email: s.email };
 }
 
 /** Runs every other API request as the signed-in user, or answers 401. */
-export function requireUser(req: Request, res: Response, next: NextFunction) {
-  const u = sessionUser(req);
-  if (!u) return void res.status(401).json({ error: 'Please sign in', code: 'auth' });
-  runAs(u, next);
+export async function requireUser(req: Request, res: Response, next: NextFunction) {
+  try {
+    const u = await sessionUser(req);
+    if (!u) return void res.status(401).json({ error: 'Please sign in', code: 'auth' });
+    // pick up changes another server instance saved for this user
+    if (await storage.syncUser(u.userId)) {
+      store.forget(u.userId);
+      providers.forget(u.userId);
+    }
+    runAs(u, next);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/** Signs in (creating the account on sign-up) once a code or link has been checked. */
+async function completeSignIn(req: Request, res: Response, p: { email: string; profile?: SignupProfile }) {
+  let user = await findUserFresh(p.email);
+  let isNew = false;
+  if (!user) {
+    user = await createUser(p.email);
+    isNew = true;
+    if (ownsLegacyData(p.email)) claimLegacyData(user);
+  }
+  const u = user;
+  if (isNew)
+    runAs({ userId: u.id, email: u.email }, () => {
+      // fill in what the sign-up form collected, without overwriting a claimed profile
+      const cur = store.getProfile();
+      const patch: Record<string, string> = { email: cur.email || u.email };
+      for (const [k, v] of Object.entries(p.profile ?? {})) if (!(cur as any)[k]) patch[k] = v;
+      store.updateProfile(patch);
+    });
+  clearCookie(req, res, PENDING_COOKIE);
+  setCookie(req, res, SESSION_COOKIE, sign({ uid: u.id, email: u.email, exp: Date.now() + SESSION_TTL_MS } satisfies Session), SESSION_TTL_MS);
+  res.json({ user: { id: u.id, email: u.email }, isNew });
 }
 
 // ---------------------------------------------------------------- routes
@@ -316,9 +379,10 @@ export function mountAuth(app: Express) {
       const email = normEmail(req.body?.email);
       const mode = req.body?.mode === 'signup' ? 'signup' : 'login';
       if (!validEmail(email)) return fail(res, 400, 'Enter a valid email address');
-      const exists = !!findUser(email) || ownsLegacyData(email);
+      const known = !!(await findUserFresh(email));
+      const exists = known || ownsLegacyData(email);
       if (mode === 'login' && !exists) return fail(res, 404, 'There’s no account with that email yet. Sign up first.');
-      if (mode === 'signup' && findUser(email)) return fail(res, 409, 'You already have an account with that email. Sign in instead.');
+      if (mode === 'signup' && known) return fail(res, 409, 'You already have an account with that email. Sign in instead.');
       const profile = mode === 'signup' ? cleanProfile(req.body?.profile) : undefined;
 
       const ip = req.get('x-forwarded-for')?.split(',')[0].trim() || req.socket.remoteAddress || '';
@@ -327,8 +391,10 @@ export function mountAuth(app: Express) {
 
       const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
       const nonce = nanoid(16);
-      const pending: Pending = { email, mode, nonce, hash: hmac(`${nonce}:${code}`), exp: Date.now() + CODE_TTL_MS, profile };
-      await sendCode(email, code, mode);
+      const exp = Date.now() + CODE_TTL_MS;
+      const pending: Pending = { email, mode, nonce, hash: hmac(`${nonce}:${code}`), exp, profile };
+      const link: LinkToken = { k: 'link', email, mode, nonce, exp, profile };
+      await sendCode(email, code, mode, sign(link));
       setCookie(req, res, PENDING_COOKIE, sign(pending), CODE_TTL_MS);
       res.json({ ok: true, email });
     } catch (e: any) {
@@ -337,11 +403,12 @@ export function mountAuth(app: Express) {
   });
 
   /** Step 2: the emailed code → signed in (account created on sign-up). */
-  app.post('/api/auth/verify', (req, res) => {
+  app.post('/api/auth/verify', async (req, res) => {
     try {
       const p = unsign<Pending>(readCookie(req, PENDING_COOKIE));
       if (!p || p.exp < Date.now()) return fail(res, 400, 'That code has expired. Request a new one.');
       const a = attempts.get(p.nonce) ?? { n: 0, exp: p.exp };
+      if (a.used) return fail(res, 400, 'That code has already been used. Request a new one.');
       if (a.n >= MAX_ATTEMPTS) return fail(res, 429, 'Too many wrong codes. Request a new one.');
       a.n++;
       attempts.set(p.nonce, a);
@@ -353,28 +420,27 @@ export function mountAuth(app: Express) {
         const left = MAX_ATTEMPTS - a.n;
         return fail(res, 400, left > 0 ? `That code isn’t right. ${left} attempt${left === 1 ? '' : 's'} left.` : 'Too many wrong codes. Request a new one.');
       }
-      attempts.set(p.nonce, { n: MAX_ATTEMPTS, exp: p.exp }); // one use only
+      attempts.set(p.nonce, { n: MAX_ATTEMPTS, exp: p.exp, used: true }); // one use only (shared with the link)
+      await completeSignIn(req, res, p);
+    } catch (e: any) {
+      fail(res, 400, e.message);
+    }
+  });
 
-      let user = findUser(p.email);
-      let isNew = false;
-      if (!user) {
-        user = createUser(p.email);
-        isNew = true;
-        if (ownsLegacyData(p.email)) claimLegacyData(user);
-      }
-      const ctx = { userId: user.id, email: user.email };
-      if (isNew)
-        runAs(ctx, () => {
-          // fill in what the sign-up form collected, without overwriting a claimed profile
-          const cur = store.getProfile();
-          const patch: Record<string, string> = { email: cur.email || user.email };
-          for (const [k, v] of Object.entries(p.profile ?? {})) if (!(cur as any)[k]) patch[k] = v;
-          store.updateProfile(patch);
-        });
-
-      clearCookie(req, res, PENDING_COOKIE);
-      setCookie(req, res, SESSION_COOKIE, sign({ uid: user.id, email: user.email, exp: Date.now() + SESSION_TTL_MS } satisfies Session), SESSION_TTL_MS);
-      res.json({ user: { id: user.id, email: user.email }, isNew });
+  /**
+   * The one-click link from the email. The page at /auth/link posts the token here (a plain GET would be
+   * "clicked" by email scanners that preview links). Works in any browser; one use, shared with the code.
+   */
+  app.post('/api/auth/link', async (req, res) => {
+    try {
+      const t = unsign<LinkToken>(String(req.body?.t ?? ''));
+      if (!t || t.k !== 'link') return fail(res, 400, 'That sign-in link isn’t valid. Request a new code.');
+      if (t.exp < Date.now()) return fail(res, 400, 'That sign-in link has expired. Request a new one.');
+      const a = attempts.get(t.nonce);
+      if (a?.used) return fail(res, 400, 'That sign-in link has already been used. Request a new one.');
+      if (a && a.n >= MAX_ATTEMPTS) return fail(res, 400, 'Too many wrong codes were tried for this sign-in. Request a new one.');
+      attempts.set(t.nonce, { n: MAX_ATTEMPTS, exp: t.exp, used: true });
+      await completeSignIn(req, res, t);
     } catch (e: any) {
       fail(res, 400, e.message);
     }
@@ -383,9 +449,9 @@ export function mountAuth(app: Express) {
   /** Public facts for the home page (no sign-in needed). */
   app.get('/api/auth/config', (_req, res) => res.json({ freeModels: !!process.env.OPENROUTER_API_KEY?.trim() }));
 
-  app.get('/api/auth/me', (req, res) => {
+  app.get('/api/auth/me', async (req, res) => {
     try {
-      const u = sessionUser(req);
+      const u = await sessionUser(req);
       u ? res.json({ user: { id: u.userId, email: u.email } }) : fail(res, 401, 'Not signed in');
     } catch (e: any) {
       fail(res, 500, e.message);

@@ -64,40 +64,41 @@ function layout({ preheader, body, footer }: { preheader: string; body: string; 
 </html>`;
 }
 
-/** The 6-digit sign-in / sign-up code email. */
-export function codeEmail({ code, purpose, to, appUrl }: { code: string; purpose: 'login' | 'signup'; to: string; appUrl?: string }) {
+/** The sign-in / sign-up email: a one-click link, with the 6-digit code as the alternative. */
+export function codeEmail({ code, purpose, to, appUrl, link }: { code: string; purpose: 'login' | 'signup'; to: string; appUrl?: string; link?: string }) {
   const b = BRAND;
   const signup = purpose === 'signup';
   const heading = signup ? 'Confirm your email' : 'Your sign-in code';
   const intro = signup
-    ? `Welcome to ${b.name}. Enter this code to finish creating your account.`
-    : `Enter this code to sign in to ${b.name}.`;
+    ? `Welcome to ${b.name}. Confirm your email to finish creating your account.`
+    : `Click the button to sign in to ${b.name}.`;
+  const action = signup ? 'Confirm and create account' : `Sign in to ${b.name}`;
   const host = appUrl ? appUrl.replace(/^https?:\/\//, '') : '';
   const subject = signup ? `${code} is your ${b.name} confirmation code` : `${code} is your ${b.name} sign-in code`;
   const spaced = `${code.slice(0, 3)}&nbsp;${code.slice(3)}`;
 
+  const button = link
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;"><tr>
+  <td bgcolor="${b.color}" style="border-radius:8px;background:${b.color};">
+    <a href="${esc(link)}" style="display:inline-block;padding:12px 22px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">${esc(action)} &rarr;</a>
+  </td></tr></table>
+<p style="margin:0 0 12px;font-size:13px;line-height:1.55;color:${b.muted};">Or enter this code on the sign-in page:</p>`
+    : '';
+
   const body = `
 <h1 style="margin:0 0 8px;font-size:22px;line-height:1.3;font-weight:600;color:${b.ink};letter-spacing:-0.01em;">${heading}</h1>
-<p style="margin:0 0 24px;font-size:15px;line-height:1.55;color:${b.body};">${esc(intro)}</p>
+<p style="margin:0 0 24px;font-size:15px;line-height:1.55;color:${b.body};">${esc(link ? intro : signup ? `Welcome to ${b.name}. Enter this code to finish creating your account.` : `Enter this code to sign in to ${b.name}.`)}</p>
+${button}
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
   <tr><td align="center" style="background:${b.tint};border:1px solid #e0e7ff;border-radius:12px;padding:22px 12px;">
     <div style="font-family:'SF Mono',SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;font-size:34px;line-height:1;font-weight:700;letter-spacing:0.18em;color:${b.ink};">${spaced}</div>
-    <div style="margin-top:10px;font-size:12px;line-height:1.4;color:${b.muted};">Expires in 10&nbsp;minutes</div>
+    <div style="margin-top:10px;font-size:12px;line-height:1.4;color:${b.muted};">${link ? 'The link and code expire' : 'Expires'} in 10&nbsp;minutes</div>
   </td></tr>
 </table>
 
-${
-  appUrl
-    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 0;"><tr>
-  <td bgcolor="${b.ink}" style="border-radius:8px;background:${b.ink};">
-    <a href="${esc(appUrl)}/${signup ? 'signup' : 'login'}" style="display:inline-block;padding:11px 18px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">Open ${esc(b.name)} &rarr;</a>
-  </td></tr></table>`
-    : ''
-}
-
 <p style="margin:24px 0 0;padding-top:20px;border-top:1px solid ${b.line};font-size:13px;line-height:1.55;color:${b.muted};">
-  Didn’t ask for this? You can safely ignore this email. Nobody can ${signup ? 'create an account' : 'sign in'} without the code, and we’ll never ask you to share it.
+  Didn’t ask for this? You can safely ignore this email. Nobody can ${signup ? 'create an account' : 'sign in'} without this email, and we’ll never ask you to share the link or code.
 </p>`;
 
   const footer = `Sent to ${esc(to)} by ${esc(b.name)}${host ? ` &middot; <a href="${esc(appUrl!)}" style="color:${b.muted};text-decoration:underline;">${esc(host)}</a>` : ''}<br>
@@ -106,14 +107,14 @@ Your AI career agent: match scores, tailored resumes and interview prep.`;
   const text = [
     `${heading}`,
     '',
-    intro,
+    link ? `${action}: ${link}` : intro,
     '',
+    link ? 'Or enter this code on the sign-in page:' : '',
     `    ${code}`,
     '',
-    'This code expires in 10 minutes.',
-    appUrl ? `Open ${b.name}: ${appUrl}/${signup ? 'signup' : 'login'}` : '',
+    `This ${link ? 'link and code expire' : 'code expires'} in 10 minutes.`,
     '',
-    `Didn't ask for this? You can safely ignore this email. Nobody can ${signup ? 'create an account' : 'sign in'} without the code.`,
+    `Didn't ask for this? You can safely ignore this email. Nobody can ${signup ? 'create an account' : 'sign in'} without it. Don't share the link or code.`,
     '',
     `— ${b.name}`,
   ]

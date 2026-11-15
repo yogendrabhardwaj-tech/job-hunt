@@ -21,6 +21,8 @@ async function post<T>(url: string, body?: unknown): Promise<T> {
 export const auth = {
   /** Emails a 6-digit code. Sign-up also sends the profile details, applied when the account is created. */
   start: (email: string, mode: 'login' | 'signup', profile?: SignupProfile) => post<{ ok: true; email: string }>('/api/auth/start', { email, mode, profile }),
+  /** Signs in with the one-click link from the email. */
+  link: (t: string) => post<{ user: AuthUser; isNew: boolean }>('/api/auth/link', { t }),
   verify: (code: string) => post<{ user: AuthUser; isNew: boolean }>('/api/auth/verify', { code }),
   me: async (): Promise<AuthUser | null> => {
     const res = await fetch('/api/auth/me');

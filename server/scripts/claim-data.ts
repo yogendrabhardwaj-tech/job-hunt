@@ -15,7 +15,7 @@ if (!email) {
   process.exit(1);
 }
 try {
-  const { user, files } = attachExistingData(email);
+  const { user, files } = await attachExistingData(email);
   await storage.flush();
   console.log(`✓ Moved ${files} files into the account ${user.email} (${user.id})`);
   process.exit(0);

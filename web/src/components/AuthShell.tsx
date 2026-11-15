@@ -90,9 +90,10 @@ export function CodeStep({
           ref={ref}
           inputMode="numeric"
           autoComplete="one-time-code"
-          maxLength={6}
           value={code}
           onChange={(e) => {
+            // no maxLength: a pasted "482 915" is 7 characters, and the browser would cut the last digit
+            // before the space is removed. Keep the digits, then take six.
             const v = e.target.value.replace(/\D/g, '').slice(0, 6);
             setCode(v);
             if (v.length === 6) submit(v); // pasted or typed the last digit

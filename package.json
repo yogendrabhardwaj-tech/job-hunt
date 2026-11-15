@@ -10,7 +10,7 @@
     "build": "vite build --config web/vite.config.ts",
     "start": "NODE_ENV=production tsx --env-file-if-exists=.env server/src/index.ts",
     "typecheck": "tsc -p server/tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
-    "blob:push": "tsx --env-file-if-exists=.env server/scripts/blob-push.ts",
+    "blob:push": "STORAGE=blob tsx --env-file-if-exists=.env server/scripts/blob-push.ts",
     "claim-data": "tsx --env-file-if-exists=.env server/scripts/claim-data.ts",
     "smtp:check": "tsx --env-file-if-exists=.env server/scripts/smtp-check.ts"
   },

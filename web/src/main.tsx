@@ -16,6 +16,8 @@ import { startSession } from './lib/session';
 import { LoginPage } from './pages/Login';
 import { SignupPage } from './pages/Signup';
 import { HomePage } from './pages/Home';
+import { AuthLinkPage } from './pages/AuthLink';
+import { NotFoundPage } from './pages/NotFound';
 import { auth, type AuthUser } from './lib/auth';
 import { AuthContext } from './lib/useAuth';
 
@@ -42,8 +44,12 @@ function RequireAuth() {
 }
 
 const router = createBrowserRouter([
+  {
+    errorElement: <NotFoundPage />,
+    children: [
   { path: '/login', element: <LoginPage /> },
   { path: '/signup', element: <SignupPage /> },
+  { path: '/auth/link', element: <AuthLinkPage /> },
   {
     element: <RequireAuth />,
     children: [
@@ -60,6 +66,9 @@ const router = createBrowserRouter([
       { path: '/help/api-keys', element: <KeyHelpPage /> },
     ],
   },
+    ],
+  },
+  { path: '*', element: <NotFoundPage /> },
     ],
   },
 ]);
