@@ -13,7 +13,7 @@ export function AuthShell({ title, sub, children, footer }: { title: string; sub
               <path d="M7 22l5-11 4 7 2.5-3.5L25 22" stroke="white" strokeWidth="2.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
-          <span className="text-[15px] font-semibold tracking-tight text-slate-900">Job Hunt Agency</span>
+          <span className="text-[15px] font-semibold tracking-tight text-slate-900">Job Hunt Alpha</span>
         </div>
         <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.04)] sm:p-8">
           <h1 className="text-xl font-semibold tracking-tight text-slate-900">{title}</h1>

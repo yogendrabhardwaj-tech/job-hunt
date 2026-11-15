@@ -64,7 +64,7 @@ function headers(p: ProviderConfig): Record<string, string> {
   if (key) h.authorization = `Bearer ${key}`;
   if (p.kind === 'openrouter') {
     h['HTTP-Referer'] = 'http://localhost:5173';
-    h['X-Title'] = 'Job Hunt Agency';
+    h['X-Title'] = 'Job Hunt Alpha';
   }
   return h;
 }

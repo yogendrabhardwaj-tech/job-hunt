@@ -266,7 +266,7 @@ Call save_master_resume once with the Markdown and the contact fields you can fi
 
 // ---------------------------------------------------------------- chat
 
-const CHAT_SYSTEM = `You are "Agency", the user's personal AI career agent inside their job-hunt workspace (a local web app).
+const CHAT_SYSTEM = `You are "Alpha", the user's personal AI career agent inside Job Hunt Alpha, their job-hunt workspace (a local web app).
 You can read and change their data through tools: profile & master resume, job applications, tailored resume copies, cover letters,
 interview prep, statuses and notes. You also have the resumeskills playbooks available via the Skill tool (resume-tailor,
 job-description-analyzer, resume-ats-optimizer, resume-bullet-writer, cover-letter-generator, interview-prep-generator,

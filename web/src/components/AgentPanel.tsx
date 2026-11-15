@@ -151,7 +151,7 @@ export function AgentPanel() {
     <div className="fixed inset-0 z-30 bg-slate-900/30 xl:hidden" onClick={() => setAgentOpen(false)} aria-hidden />
     <aside
       role="complementary"
-      aria-label="Agency copilot"
+      aria-label="Alpha copilot"
       className="fixed inset-y-0 right-0 z-40 flex h-full w-full flex-col border-l border-slate-200 bg-white shadow-2xl sm:w-[420px] xl:static xl:z-auto xl:w-[400px] xl:shrink-0 xl:shadow-none"
     >
       <header className="flex h-14 items-center justify-between border-b border-slate-100 px-4">
@@ -160,7 +160,7 @@ export function AgentPanel() {
             <Sparkles className="size-3.5" />
           </div>
           <div>
-            <div className="text-sm font-semibold leading-tight text-slate-900">Agency copilot</div>
+            <div className="text-sm font-semibold leading-tight text-slate-900">Alpha copilot</div>
             <div className="text-[11px] leading-tight text-slate-500">{jobId ? `Context: ${jobId}` : 'Can read & update your workspace'}</div>
           </div>
         </div>

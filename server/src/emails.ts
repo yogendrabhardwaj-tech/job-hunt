@@ -5,7 +5,7 @@
  */
 
 export const BRAND = {
-  name: 'Job Hunt Agency',
+  name: 'Job Hunt Alpha',
   color: '#4f46e5', // brand-600
   colorDark: '#4338ca',
   tint: '#eef2ff', // brand-50

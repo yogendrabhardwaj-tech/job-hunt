@@ -1,4 +1,4 @@
-# Design audit: Agency job-hunt workspace
+# Design audit: Job Hunt Alpha workspace
 
 Date: 2026-10-29. Method: bencium `design-audit` + `typography` (Butterick) skills. Every screen (Dashboard, Applications, Job workspace, Profile, Resume library, Print view) was captured at 390 px, 1024 px and 1500 px with the copilot open, and the code under `web/src` was reviewed.
 

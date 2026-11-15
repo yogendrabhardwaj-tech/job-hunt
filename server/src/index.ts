@@ -306,6 +306,6 @@ export default app;
 if (!process.env.VERCEL) {
   const PORT = Number(process.env.PORT || 8787);
   app.listen(PORT, '127.0.0.1', () => {
-    console.log(`\n  Job Hunt Agency API → http://localhost:${PORT}\n`);
+    console.log(`\n  Job Hunt Alpha API → http://localhost:${PORT}\n`);
   });
 }

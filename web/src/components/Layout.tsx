@@ -62,7 +62,7 @@ export function Layout() {
           {menuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
         </button>
         <Logo />
-        <span className="text-sm font-semibold tracking-tight text-white">Agency</span>
+        <span className="text-sm font-semibold tracking-tight text-white">Job Hunt Alpha</span>
         <button onClick={() => setNewOpen(true)} className="ml-auto flex items-center gap-1.5 rounded-lg bg-white/[0.08] px-3 py-2 text-sm font-medium text-white ring-1 ring-inset ring-white/10">
           <Plus className="size-4" /> New role
         </button>
@@ -87,8 +87,8 @@ export function Layout() {
         <div className="flex h-14 items-center gap-2.5 px-4">
           <Logo />
           <div>
-            <div className="text-sm font-semibold tracking-tight text-white">Agency</div>
-            <div className="text-[10.5px] text-slate-400">Job hunt workspace</div>
+            <div className="text-sm font-semibold tracking-tight text-white">Job Hunt Alpha</div>
+            <div className="text-[10.5px] text-slate-400">Your AI career agent</div>
           </div>
         </div>
 
