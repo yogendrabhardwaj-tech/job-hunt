@@ -80,7 +80,7 @@ export function CodeStep({
       <div className="mb-5 flex items-start gap-3 rounded-lg bg-brand-50 p-3 text-sm text-slate-700 ring-1 ring-inset ring-brand-100">
         <MailCheck className="mt-0.5 size-4 shrink-0 text-brand-600" />
         <span>
-          We emailed a 6-digit code to <b className="break-all">{email}</b>. It expires in 10 minutes. Check your spam folder if you don’t see it.
+          We emailed <b className="break-all">{email}</b> a sign-in link and a 6-digit code. Click the link to sign in automatically (it works for 5&nbsp;minutes), or enter the code here (10&nbsp;minutes). Check your spam folder if you don’t see it.
         </span>
       </div>
       <FormError msg={err} />

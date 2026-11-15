@@ -22,7 +22,7 @@ export function LoginPage() {
   return (
     <AuthShell
       title={sentTo ? 'Check your email' : 'Sign in'}
-      sub={sentTo ? undefined : 'Enter your email and we’ll send you a code. No password needed.'}
+      sub={sentTo ? undefined : 'Enter your email and we’ll send you a sign-in link and code. No password needed.'}
       footer={
         <>
           New here?{' '}
@@ -76,7 +76,7 @@ export function LoginPage() {
             />
           </label>
           <Button type="submit" variant="primary" className="mt-4 w-full" loading={busy}>
-            Email me a code
+            Email me a sign-in link
           </Button>
         </form>
       )}

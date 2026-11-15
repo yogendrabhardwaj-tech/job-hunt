@@ -87,7 +87,7 @@ export function SignupPage() {
             <input required autoComplete="family-name" value={last} onChange={(e) => setLast(e.target.value)} className={inputCls} />
           </Field>
         </div>
-        <Field label="Email" required hint="We’ll send a sign-in code here">
+        <Field label="Email" required hint="We’ll send a sign-in link here">
           <input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className={inputCls} />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -165,9 +165,9 @@ export function SignupPage() {
         </div>
 
         <Button type="submit" variant="primary" className="w-full" loading={busy}>
-          Email me a code
+          Email me a sign-in link
         </Button>
-        <p className="text-center text-xs text-slate-500">No password needed. You’ll sign in with a code we email you.</p>
+        <p className="text-center text-xs text-slate-500">No password needed. We’ll email you a link that signs you in with one click, plus a code you can type instead.</p>
       </form>
     </AuthShell>
   );

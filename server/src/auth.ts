@@ -21,6 +21,8 @@ import { codeEmail } from './emails.ts';
  */
 
 const CODE_TTL_MS = 10 * 60_000;
+/** The one-click link in the email is shorter-lived than the code: it signs in without typing anything. */
+const LINK_TTL_MS = 5 * 60_000;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60_000;
 const MAX_ATTEMPTS = 5;
 const PENDING_COOKIE = 'jh_pending';
@@ -393,7 +395,7 @@ export function mountAuth(app: Express) {
       const nonce = nanoid(16);
       const exp = Date.now() + CODE_TTL_MS;
       const pending: Pending = { email, mode, nonce, hash: hmac(`${nonce}:${code}`), exp, profile };
-      const link: LinkToken = { k: 'link', email, mode, nonce, exp, profile };
+      const link: LinkToken = { k: 'link', email, mode, nonce, exp: Date.now() + LINK_TTL_MS, profile };
       await sendCode(email, code, mode, sign(link));
       setCookie(req, res, PENDING_COOKIE, sign(pending), CODE_TTL_MS);
       res.json({ ok: true, email });
@@ -435,11 +437,12 @@ export function mountAuth(app: Express) {
     try {
       const t = unsign<LinkToken>(String(req.body?.t ?? ''));
       if (!t || t.k !== 'link') return fail(res, 400, 'That sign-in link isn’t valid. Request a new code.');
-      if (t.exp < Date.now()) return fail(res, 400, 'That sign-in link has expired. Request a new one.');
+      if (t.exp < Date.now())
+        return fail(res, 400, 'That sign-in link has expired: links work for 5 minutes. Enter the 6-digit code from the same email instead (it works for 10 minutes), or request a new one.');
       const a = attempts.get(t.nonce);
       if (a?.used) return fail(res, 400, 'That sign-in link has already been used. Request a new one.');
       if (a && a.n >= MAX_ATTEMPTS) return fail(res, 400, 'Too many wrong codes were tried for this sign-in. Request a new one.');
-      attempts.set(t.nonce, { n: MAX_ATTEMPTS, exp: t.exp, used: true });
+      attempts.set(t.nonce, { n: MAX_ATTEMPTS, exp: Date.now() + CODE_TTL_MS, used: true }); // outlives the code, so it can't be used after the link
       await completeSignIn(req, res, t);
     } catch (e: any) {
       fail(res, 400, e.message);
