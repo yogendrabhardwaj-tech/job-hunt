@@ -11,6 +11,10 @@ import { ProfilePage } from './pages/Profile';
 import { Resumes } from './pages/Resumes';
 import { PrintResume } from './pages/PrintResume';
 import { SettingsPage } from './pages/Settings';
+import { KeyHelpPage } from './pages/KeyHelp';
+import { startSession } from './lib/session';
+
+startSession();
 
 const router = createBrowserRouter([
   { path: '/print/:file', element: <PrintResume /> },
@@ -23,6 +27,7 @@ const router = createBrowserRouter([
       { path: '/profile', element: <ProfilePage /> },
       { path: '/resumes', element: <Resumes /> },
       { path: '/settings', element: <SettingsPage /> },
+      { path: '/help/api-keys', element: <KeyHelpPage /> },
     ],
   },
 ]);

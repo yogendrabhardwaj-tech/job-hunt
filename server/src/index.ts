@@ -48,6 +48,24 @@ app.get('/api/tasks/:id', (req, res) => {
 
 // ---------------------------------------------------------------- AI sources (settings)
 
+/** Per-tab id the browser sends with every request, used to hold session-only API keys. */
+const sid = (req: Request) => {
+  const v = req.get('x-session-id') ?? req.body?.sessionId;
+  return providers.validSessionId(v) ? v : undefined;
+};
+app.post('/api/session/heartbeat', (req, res) => {
+  const id = sid(req);
+  if (id) providers.touchSession(id);
+  res.json({ ok: !!id });
+});
+/** Sent with navigator.sendBeacon when the tab closes; a reload checks back in before the grace period ends. */
+app.post('/api/session/end', express.text({ type: '*/*' }), (req, res) => {
+  // beacons can't set headers, so the id arrives as the plain-text body
+  const id = req.get('x-session-id') ?? (typeof req.body === 'string' ? req.body.trim() : req.body?.sessionId);
+  if (providers.validSessionId(id)) providers.endSession(id);
+  res.status(204).end();
+});
+
 app.get('/api/settings', (_req, res) => res.json(providers.publicSettings()));
 app.put(
   '/api/settings',
@@ -60,14 +78,21 @@ app.put(
 app.post(
   '/api/settings/providers',
   wrap((req, res) => {
-    providers.addProvider(req.body ?? {});
+    providers.addProvider(req.body ?? {}, sid(req));
     res.json(providers.publicSettings());
   }),
 );
 app.put(
   '/api/settings/providers/:id',
   wrap((req, res) => {
-    providers.updateProvider(param(req, 'id'), req.body ?? {});
+    providers.updateProvider(param(req, 'id'), req.body ?? {}, sid(req));
+    res.json(providers.publicSettings());
+  }),
+);
+app.delete(
+  '/api/settings/providers/:id/key',
+  wrap((req, res) => {
+    providers.forgetKey(param(req, 'id'));
     res.json(providers.publicSettings());
   }),
 );
@@ -83,7 +108,7 @@ app.post(
     const kind = saved?.kind ?? req.body?.kind;
     if (!kind) throw new Error('Source type required');
     const baseUrl = String(req.body?.baseUrl || saved?.baseUrl || '').replace(/\/+$/, '');
-    res.json(await listModels({ kind, baseUrl, apiKey: String(req.body?.apiKey || saved?.apiKey || '') }));
+    res.json(await listModels({ kind, baseUrl, apiKey: String(req.body?.apiKey || (saved ? providers.keyFor(saved) : '')) }));
   }),
 );
 app.post(
@@ -114,7 +139,7 @@ app.post(
   wrap(async (req, res) => {
     let text = String(req.body.text ?? '');
     if (req.file) {
-      fs.writeFileSync(path.join(store.UPLOAD_DIR, `${Date.now()}_${req.file.originalname.replace(/[^\w.-]/g, '_')}`), req.file.buffer);
+      await store.archiveUpload(req.file.originalname, req.file.buffer);
       text = await fileToText(req.file.buffer, req.file.originalname);
     }
     if (text.trim().length < 100) throw new Error('Could not read enough text from that resume');
@@ -144,7 +169,11 @@ app.put(
 );
 app.get(
   '/api/resumes/:file/download',
-  wrap((req, res) => res.download(store.resumePath(param(req, 'file')))),
+  wrap((req, res) => {
+    const file = param(req, 'file');
+    if (!store.resumeExists(file)) return void res.status(404).json({ error: 'not found' });
+    res.attachment(file).type('text/markdown').send(store.readResume(file));
+  }),
 );
 
 // ---------------------------------------------------------------- jobs
@@ -266,8 +295,8 @@ if (fs.existsSync(dist)) {
 for (const job of store.listJobs()) {
   const cur = job.tailored?.file;
   const want = store.tailoredFileName(job.id);
-  if (!cur || cur === want || !fs.existsSync(store.resumePath(cur)) || fs.existsSync(store.resumePath(want))) continue;
-  fs.renameSync(store.resumePath(cur), store.resumePath(want));
+  if (!cur || cur === want || !store.resumeExists(cur) || store.resumeExists(want)) continue;
+  store.renameResume(cur, want);
   store.updateJob(job.id, (j) => void (j.tailored!.file = want));
   for (const a of [job.analysis, job.tailored?.analysis]) if (a?.resumeFile === cur) a.resumeFile = want;
   store.logActivity(job.id, `Tailored resume renamed to ${want}`);

@@ -1,10 +1,11 @@
+import { sessionId } from './session';
 import type { AISettings, DuplicateMatch, Job, ModelInfo, Profile, ProviderConfig, ResumeFile, TaskSummary } from './types';
 
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   const isForm = body instanceof FormData;
   const res = await fetch(url, {
     method,
-    headers: body && !isForm ? { 'content-type': 'application/json' } : undefined,
+    headers: { 'x-session-id': sessionId, ...(body && !isForm ? { 'content-type': 'application/json' } : {}) },
     body: body ? (isForm ? body : JSON.stringify(body)) : undefined,
   });
   const data = await res.json().catch(() => ({}));
@@ -38,6 +39,7 @@ export const api = {
   saveSettings: (patch: { strategy?: AISettings['strategy']; order?: string[] }) => req<AISettings>('PUT', '/api/settings', patch),
   addSource: (p: Partial<ProviderConfig> & { apiKey?: string }) => req<AISettings>('POST', '/api/settings/providers', p),
   updateSource: (id: string, p: Partial<ProviderConfig> & { apiKey?: string }) => req<AISettings>('PUT', `/api/settings/providers/${id}`, p),
+  forgetKey: (id: string) => req<AISettings>('DELETE', `/api/settings/providers/${id}/key`),
   deleteSource: (id: string) => req<AISettings>('DELETE', `/api/settings/providers/${id}`),
   models: (q: { id?: string; kind: string; baseUrl?: string; apiKey?: string }) => req<ModelInfo[]>('POST', '/api/settings/models', q),
   testSource: (id: string) =>

@@ -60,7 +60,8 @@ function extractError(body: string): string {
 
 function headers(p: ProviderConfig): Record<string, string> {
   const h: Record<string, string> = { 'content-type': 'application/json' };
-  if (p.apiKey) h.authorization = `Bearer ${p.apiKey}`;
+  const key = providers.keyFor(p);
+  if (key) h.authorization = `Bearer ${key}`;
   if (p.kind === 'openrouter') {
     h['HTTP-Referer'] = 'http://localhost:5173';
     h['X-Title'] = 'Job Hunt Agency';
@@ -110,7 +111,8 @@ export async function complete(
         ...(p.kind === 'lmstudio' || p.kind === 'openrouter' ? { stream_options: { include_usage: true } } : {}),
         ...body,
         ...(body.tools?.length ? { tool_choice: 'auto' } : {}),
-        ...(p.maxTokens ? { max_tokens: body.max_tokens ?? p.maxTokens } : {}),
+        // OpenAI's current models reject max_tokens in favour of max_completion_tokens
+        ...(p.maxTokens ? { [p.kind === 'openai' ? 'max_completion_tokens' : 'max_tokens']: body.max_tokens ?? p.maxTokens } : {}),
       }),
       signal: AbortSignal.timeout(5 * MIN),
     });
@@ -321,7 +323,7 @@ export function saveSession(id: string | undefined, state: LoopState): string {
 
 // ---------------------------------------------------------------- settings-page helpers
 
-export async function listModels(p: Pick<ProviderConfig, 'kind' | 'baseUrl' | 'apiKey'>): Promise<{ id: string; tools?: boolean; context?: number; free?: boolean }[]> {
+export async function listModels(p: Pick<ProviderConfig, 'kind' | 'baseUrl' | 'apiKey'> & { id?: string }): Promise<{ id: string; tools?: boolean; context?: number; free?: boolean }[]> {
   if (!p.baseUrl) throw new Error('Set the base URL first');
   if (p.kind === 'lmstudio') {
     const r = await fetch(p.baseUrl.replace(/\/v1$/, '/api/v0/models'), { signal: AbortSignal.timeout(10_000) }).catch(() => null);
@@ -346,6 +348,7 @@ export async function listModels(p: Pick<ProviderConfig, 'kind' | 'baseUrl' | 'a
     free: m.pricing ? Number(m.pricing.prompt) === 0 && Number(m.pricing.completion) === 0 : undefined,
   }));
   if (p.kind === 'openrouter') models = models.filter((m) => m.free || m.id.endsWith(':free'));
+  if (p.kind === 'openai') models = models.filter((m) => /^(gpt|o\d|chatgpt)/.test(m.id) && !/embedding|tts|whisper|dall-e|image|audio|realtime|transcribe|search|moderation|instruct/.test(m.id));
   if (p.kind === 'google') models = models.filter((m) => /gemini|gemma/.test(m.id) && !/embedding|image|tts|audio|live/.test(m.id));
   return models.filter((m) => m.id).sort((a, b) => Number(b.tools ?? 0) - Number(a.tools ?? 0) || a.id.localeCompare(b.id));
 }

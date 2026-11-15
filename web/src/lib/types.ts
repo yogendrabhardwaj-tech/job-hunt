@@ -106,7 +106,7 @@ export interface ResumeFile {
 
 // ---------------------------------------------------------------- AI sources (server/src/llm/providers.ts)
 
-export type ProviderKind = 'openrouter' | 'huggingface' | 'google' | 'lmstudio' | 'openai-compatible' | 'claude';
+export type ProviderKind = 'openrouter' | 'openai' | 'huggingface' | 'google' | 'lmstudio' | 'openai-compatible' | 'claude';
 
 export interface ProviderConfig {
   id: string;
@@ -119,7 +119,12 @@ export interface ProviderConfig {
   weight: number;
   dailyLimit: number;
   maxTokens: number;
+  /** Remember the key on disk; otherwise it's kept for this browser session only. */
+  saveKey: boolean;
+  /** A key is in effect (saved, or entered in an open tab). */
   apiKeySet: boolean;
+  keySaved: boolean;
+  keyInSession: boolean;
   apiKeyHint: string;
   usage: {
     runs: number;
@@ -141,6 +146,7 @@ export interface ProviderPreset {
   baseUrl: string;
   needsKey: boolean;
   keyUrl?: string;
+  helpAnchor?: string;
   modelHint: string;
   note: string;
 }
