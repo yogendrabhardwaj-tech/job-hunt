@@ -3,7 +3,13 @@
   "git": {
     "deploymentEnabled": false
   },
+  "functions": {
+    "api/index.ts": {
+      "excludeFiles": "{data/**,.env*,AGENT_STATUS.md}"
+    }
+  },
   "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }

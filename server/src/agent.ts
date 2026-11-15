@@ -73,16 +73,29 @@ export interface RunOptions {
   skills?: boolean;
   resume?: string;
   maxTurns?: number;
+  /** Run on this source only (picked in the copilot), with no failover to others. */
+  sourceId?: string;
 }
 
 /** Pick sources from the router and fail over between them until one completes the run. */
 export async function runAgent(o: RunOptions): Promise<{ sessionId?: string; result: string }> {
   await Promise.resolve(); // let callers subscribe to the task's events before the first one is pushed
   // A chat started on Claude can only be resumed by Claude, and one started on a free model only by free models.
-  const ownSession = oa.hasSession(o.resume);
-  const claudeSession = !!o.resume && !ownSession;
-  let order = providers.routeOrder();
-  if (claudeSession && order.some((p) => p.kind === 'claude')) order = order.filter((p) => p.kind === 'claude');
+  let ownSession = oa.hasSession(o.resume);
+  let claudeSession = !!o.resume && !ownSession;
+  let order: ProviderConfig[];
+  if (o.sourceId) {
+    const p = providers.getProvider(o.sourceId);
+    if (!p) throw new Error('The AI model picked in the copilot no longer exists. Pick another one, or choose Auto.');
+    const a = providers.availability(p);
+    if (!a.ok) throw new Error(`${p.name} (${p.model}) isn't available: ${a.reason}. Pick another model in the copilot, or choose Auto.`);
+    order = [p];
+    // the picked source can't read a conversation kept by the other kind, so it starts a fresh one
+    if ((p.kind === 'claude') !== claudeSession) ownSession = claudeSession = false;
+  } else {
+    order = providers.routeOrder();
+    if (claudeSession && order.some((p) => p.kind === 'claude')) order = order.filter((p) => p.kind === 'claude');
+  }
   if (!order.length) throw new Error(providers.whyNothingAvailable());
 
   // Workflows hand the agent exactly one save tool; the run is only done once it has been called.

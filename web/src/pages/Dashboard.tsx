@@ -31,7 +31,7 @@ export function Dashboard() {
   return (
     <div className="mx-auto max-w-[1180px] px-4 sm:px-6 py-8">
       <PageHeader
-        title={first ? `Good to see you, ${first}` : 'Welcome to your agency'}
+        title={first ? `Good to see you, ${first}` : 'Welcome to Job Hunt Alpha'}
         sub="Your job search at a glance. The agent keeps it up to date as you work."
         right={
           <Button variant="primary" icon={<Plus className="size-4" />} onClick={openNew}>

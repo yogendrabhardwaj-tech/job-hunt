@@ -157,6 +157,8 @@ export interface ProviderPreset {
 
 export interface AISettings {
   strategy: 'balanced' | 'priority';
+  /** The "Claude plan" source only works when the app runs on your own computer. */
+  claudeAllowed: boolean;
   presets: Record<ProviderKind, ProviderPreset>;
   providers: ProviderConfig[];
 }

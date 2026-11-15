@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
-import { ArrowUp, Bot, Loader2, RotateCcw, Sparkles, Square, Wrench, X } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { ArrowUp, Bot, Cpu, Loader2, RotateCcw, Settings2, Sparkles, Square, Wrench, X } from 'lucide-react';
 import { useLive } from '../lib/live';
 import { Md } from './Markdown';
 import { cx } from '../lib/format';
+import { api } from '../lib/api';
+import type { ProviderConfig } from '../lib/types';
 
 interface Msg {
   role: 'user' | 'agent';
@@ -11,9 +13,16 @@ interface Msg {
   steps: string[];
   error?: string;
   pending?: boolean;
+  /** Which source and model answered, e.g. "Free models (included) · openrouter/free". */
+  via?: string;
 }
 
 const STORE_KEY = 'agency.chat.v1';
+/** The model picked in the copilot: a source id from Settings, or '' for Auto. */
+const MODEL_KEY = 'agency.chat.model';
+
+/** Chats kept by the free-model runner have "oa_" ids; any other id is a Claude conversation. */
+const isClaudeSession = (id?: string) => !!id && !id.startsWith('oa_');
 
 function suggestionsFor(path: string): string[] {
   if (path.startsWith('/jobs/'))
@@ -44,6 +53,31 @@ export function AgentPanel() {
   const abort = useRef<AbortController | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [sources, setSources] = useState<ProviderConfig[] | null>(null);
+  const [sourceId, setSourceId] = useState(() => localStorage.getItem(MODEL_KEY) ?? '');
+
+  const loadSources = () =>
+    api
+      .settings()
+      .then((s) => setSources(s.providers))
+      .catch(() => {});
+  useEffect(() => {
+    if (agentOpen) loadSources();
+  }, [agentOpen]);
+  // a picked source that was removed in Settings falls back to Auto
+  const picked = sources?.find((p) => p.id === sourceId);
+  const effectiveId = sources && !picked ? '' : sourceId;
+
+  const pickModel = (id: string) => {
+    const next = sources?.find((p) => p.id === id);
+    // Claude and the other models keep conversations differently, so neither can continue the other's
+    if (next && sessionId && msgs.length && (next.kind === 'claude') !== isClaudeSession(sessionId)) {
+      if (!confirm(`${next.name} can't continue this conversation, so switching starts a new one. Switch?`)) return;
+      reset();
+    }
+    setSourceId(id);
+    localStorage.setItem(MODEL_KEY, id);
+  };
 
   useEffect(() => {
     localStorage.setItem(STORE_KEY, JSON.stringify({ msgs: msgs.filter((m) => !m.pending).slice(-40), sessionId }));
@@ -73,7 +107,7 @@ export function AgentPanel() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ message, sessionId, jobId, page: loc.pathname }),
+        body: JSON.stringify({ message, sessionId, jobId, page: loc.pathname, sourceId: effectiveId || undefined }),
         signal: abort.current.signal,
       });
       if (!res.body) throw new Error('No response stream');
@@ -92,6 +126,7 @@ export function AgentPanel() {
           if (e.type === 'text') patchLast((m) => ({ ...m, text: m.text + e.text }));
           else if (e.type === 'tool') patchLast((m) => ({ ...m, steps: [...m.steps, e.text] }));
           else if (e.type === 'error') patchLast((m) => ({ ...m, error: e.text }));
+          else if (e.type === 'status' && typeof e.text === 'string' && e.text.startsWith('Using ')) patchLast((m) => ({ ...m, via: e.text.slice(6) }));
           else if (e.type === 'session' && e.sessionId) setSessionId(e.sessionId);
         }
       }
@@ -116,7 +151,7 @@ export function AgentPanel() {
     <div className="fixed inset-0 z-30 bg-slate-900/30 xl:hidden" onClick={() => setAgentOpen(false)} aria-hidden />
     <aside
       role="complementary"
-      aria-label="Agency copilot"
+      aria-label="Alpha copilot"
       className="fixed inset-y-0 right-0 z-40 flex h-full w-full flex-col border-l border-slate-200 bg-white shadow-2xl sm:w-[420px] xl:static xl:z-auto xl:w-[400px] xl:shrink-0 xl:shadow-none"
     >
       <header className="flex h-14 items-center justify-between border-b border-slate-100 px-4">
@@ -125,7 +160,7 @@ export function AgentPanel() {
             <Sparkles className="size-3.5" />
           </div>
           <div>
-            <div className="text-sm font-semibold leading-tight text-slate-900">Agency copilot</div>
+            <div className="text-sm font-semibold leading-tight text-slate-900">Alpha copilot</div>
             <div className="text-[11px] leading-tight text-slate-500">{jobId ? `Context: ${jobId}` : 'Can read & update your workspace'}</div>
           </div>
         </div>
@@ -175,6 +210,11 @@ export function AgentPanel() {
                 </div>
               )}
               {m.error && <div className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{m.error}</div>}
+              {m.via && !m.pending && (
+                <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                  <Cpu className="size-3" /> {m.via}
+                </div>
+              )}
             </div>
           ),
         )}
@@ -219,8 +259,50 @@ export function AgentPanel() {
             {busy ? <Square className="size-3" /> : <ArrowUp className="size-4" />}
           </button>
         </div>
+        <ModelPicker sources={sources} value={effectiveId} onChange={pickModel} onOpen={loadSources} disabled={busy} />
       </div>
     </aside>
     </>
+  );
+}
+
+/** Chooses which AI answers in the copilot: Auto follows the order on the Settings page, or one source on its own. */
+function ModelPicker({ sources, value, onChange, onOpen, disabled }: {
+  sources: ProviderConfig[] | null;
+  value: string;
+  onChange: (id: string) => void;
+  onOpen: () => void;
+  disabled: boolean;
+}) {
+  const picked = sources?.find((p) => p.id === value);
+  const down = picked && !picked.availability.ok ? picked.availability.reason : '';
+  return (
+    <div className="mt-2 px-0.5">
+      <div className="flex items-center gap-2 text-xs text-slate-500">
+        <label htmlFor="copilot-model" className="flex shrink-0 items-center gap-1">
+          <Cpu className="size-3.5" /> Model
+        </label>
+        <select
+          id="copilot-model"
+          value={value}
+          disabled={disabled || !sources}
+          onFocus={onOpen}
+          onChange={(e) => onChange(e.target.value)}
+          className="min-w-0 flex-1 truncate rounded-md border-0 bg-slate-50 py-1 pl-2 pr-7 text-xs text-slate-700 ring-1 ring-inset ring-slate-200 focus:ring-2 focus:ring-brand-500 disabled:opacity-60"
+        >
+          <option value="">Auto · follows your Settings order</option>
+          {sources?.map((p) => (
+            <option key={p.id} value={p.id} disabled={!p.availability.ok && p.id !== value}>
+              {p.name} · {p.model || 'no model set'}
+              {p.availability.ok ? '' : ` (${p.availability.reason})`}
+            </option>
+          ))}
+        </select>
+        <Link to="/settings" title="Add or change AI models" aria-label="AI settings" className="shrink-0 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+          <Settings2 className="size-3.5" />
+        </Link>
+      </div>
+      {down && <p className="mt-1 text-[11px] text-amber-700">{picked!.name} isn’t available: {down}. Pick another model or Auto.</p>}
+    </div>
   );
 }

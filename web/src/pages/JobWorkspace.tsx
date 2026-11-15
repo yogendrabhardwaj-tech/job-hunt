@@ -188,8 +188,10 @@ export function JobWorkspace() {
 
       <div className="mt-5">
         {!job.details ? (
-          scanning || job.scan.state === 'pending' ? (
+          scanning || job.scan.state === 'pending' || job.scan.state === 'running' ? (
             <ScanningState />
+          ) : job.scan.state === 'error' ? (
+            <ScanFailed job={job} />
           ) : (
             <PasteJd job={job} />
           )
@@ -244,7 +246,7 @@ function ScoreStrip({ job }: { job: Job }) {
         <Sparkles className="mt-0.5 size-3.5 shrink-0 text-brand-500" />
         <div className="min-w-0 flex-1">
           <span className="font-medium text-slate-500">Verdict{t ? ' (tailored)' : ''}: </span>
-          <span className={cx('text-slate-900', !more && 'line-clamp-1')}>{best?.verdict ?? (job.details ? 'Waiting for analysis…' : 'Scanning posting…')}</span>
+          <span className={cx('text-slate-900', !more && 'line-clamp-1')}>{best?.verdict ?? (job.details ? 'Waiting for analysis…' : job.scan.state === 'error' ? 'Scan failed' : 'Scanning posting…')}</span>
           {best && (
             <span className="mt-0.5 block text-xs text-slate-500">
               {best.requirements.filter((r) => r.type === 'must' && r.status === 'met').length}/{best.requirements.filter((r) => r.type === 'must').length} must-haves met ·{' '}
@@ -783,11 +785,57 @@ function ScanningState() {
   );
 }
 
+/** The scan stopped with an error: say why, and offer a retry or a pasted description. */
+function ScanFailed({ job }: { job: Job }) {
+  const [busy, setBusy] = useState(false);
+  const [paste, setPaste] = useState(false);
+  const err = job.scan.error || 'The scan didn’t finish.';
+  // AI source problems (bad or missing key, every source failing) are fixed in Settings, not by retrying
+  const aiProblem = /HTTP 40[123]|api key|authenticat|credentials|All AI sources failed|No AI source|cooling down|cooldown/i.test(err);
+  if (paste) return <PasteJd job={job} />;
+  return (
+    <Card className="p-6">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-500" />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-slate-900">The scan didn’t finish</div>
+          <p className="mt-1 break-words text-sm text-slate-600">{err}</p>
+          {aiProblem && (
+            <p className="mt-2 text-sm text-slate-500">
+              This looks like a problem with the AI source, not the posting. Check your keys in{' '}
+              <Link to="/settings" className="font-medium text-brand-700 hover:underline">
+                Settings
+              </Link>
+              , or add a key of your own.
+            </p>
+          )}
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button
+              variant="ai"
+              loading={busy}
+              icon={<RefreshCw className="size-4" />}
+              onClick={async () => {
+                setBusy(true);
+                await api.action(job.id, 'rescan').finally(() => setBusy(false));
+              }}
+            >
+              Try again
+            </Button>
+            <Button onClick={() => setPaste(true)} icon={<FileText className="size-4" />}>
+              Paste the description
+            </Button>
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function PasteJd({ job }: { job: Job }) {
   const [text, setText] = useState('');
   return (
     <Card className="p-6">
-      <div className="text-sm font-semibold text-slate-900">Couldn't read this posting</div>
+      <div className="text-sm font-semibold text-slate-900">{job.scan.state === 'error' ? 'Paste the job description' : 'Couldn’t read this posting'}</div>
       <p className="mt-1 text-sm text-slate-500">Some sites (LinkedIn, Workday) block automated reads. Paste the description and the agent will take it from there.</p>
       <textarea value={text} onChange={(e) => setText(e.target.value)} rows={10} className={inputCls + ' mt-3'} placeholder="Paste the job description…" />
       <div className="mt-3 flex justify-end">

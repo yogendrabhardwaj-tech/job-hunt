@@ -198,7 +198,7 @@ export function SettingsPage() {
       <Card className="mt-4 p-4">
         <div className="text-sm font-medium text-slate-800">Add a source</div>
         <div className="mt-2 flex flex-wrap gap-2">
-          {ADDABLE.map((k) => (
+          {ADDABLE.filter((k) => k !== 'claude' || s.claudeAllowed).map((k) => (
             <Button key={k} size="sm" icon={<Plus className="size-3.5" />} onClick={() => setAdding(k)} disabled={!!adding}>
               {s.presets[k].label}
             </Button>

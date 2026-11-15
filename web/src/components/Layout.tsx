@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Briefcase, CircleHelp, Cpu, FileText, LayoutDashboard, Loader2, Menu, Plus, Sparkles, UserRound, X } from 'lucide-react';
+import { Briefcase, CircleHelp, Cpu, LogOut, FileText, LayoutDashboard, Loader2, Menu, Plus, Sparkles, UserRound, X } from 'lucide-react';
 import { useLive, useProfile } from '../lib/live';
 import { api } from '../lib/api';
 import { cx } from '../lib/format';
 import { AgentPanel } from './AgentPanel';
+import { auth } from '../lib/auth';
+import { useAuth } from '../lib/useAuth';
 import { NewJobModal } from './NewJobModal';
 
 const NAV = [
@@ -19,6 +21,7 @@ const NAV = [
 export function Layout() {
   const { agentOpen, setAgentOpen, tasks } = useLive();
   const { data } = useProfile();
+  const user = useAuth();
   const [newOpen, setNewOpen] = useState(false);
   const [model, setModel] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -59,7 +62,7 @@ export function Layout() {
           {menuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
         </button>
         <Logo />
-        <span className="text-sm font-semibold tracking-tight text-white">Agency</span>
+        <span className="text-sm font-semibold tracking-tight text-white">Job Hunt Alpha</span>
         <button onClick={() => setNewOpen(true)} className="ml-auto flex items-center gap-1.5 rounded-lg bg-white/[0.08] px-3 py-2 text-sm font-medium text-white ring-1 ring-inset ring-white/10">
           <Plus className="size-4" /> New role
         </button>
@@ -84,8 +87,8 @@ export function Layout() {
         <div className="flex h-14 items-center gap-2.5 px-4">
           <Logo />
           <div>
-            <div className="text-sm font-semibold tracking-tight text-white">Agency</div>
-            <div className="text-[10.5px] text-slate-400">Job hunt workspace</div>
+            <div className="text-sm font-semibold tracking-tight text-white">Job Hunt Alpha</div>
+            <div className="text-[10.5px] text-slate-400">Your AI career agent</div>
           </div>
         </div>
 
@@ -163,6 +166,17 @@ export function Layout() {
               <div className="truncate text-[11px] text-slate-400">{model ? `Agent · ${model}` : p?.headline}</div>
             </div>
           </NavLink>
+          <button
+            onClick={async () => {
+              await auth.logout().catch(() => {});
+              location.assign('/login');
+            }}
+            title={user ? `Signed in as ${user.email}` : undefined}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-[12.5px] text-slate-400 hover:bg-white/5 hover:text-slate-200"
+          >
+            <LogOut className="size-3.5 shrink-0" />
+            <span className="truncate">Sign out{user ? ` · ${user.email}` : ''}</span>
+          </button>
         </div>
       </nav>
 

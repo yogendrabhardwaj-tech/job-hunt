@@ -64,7 +64,7 @@ function headers(p: ProviderConfig): Record<string, string> {
   if (key) h.authorization = `Bearer ${key}`;
   if (p.kind === 'openrouter') {
     h['HTTP-Referer'] = 'http://localhost:5173';
-    h['X-Title'] = 'Job Hunt Agency';
+    h['X-Title'] = 'Job Hunt Alpha';
   }
   return h;
 }
@@ -326,7 +326,8 @@ export function saveSession(id: string | undefined, state: LoopState): string {
 export async function listModels(p: Pick<ProviderConfig, 'kind' | 'baseUrl' | 'apiKey'> & { id?: string }): Promise<{ id: string; tools?: boolean; context?: number; free?: boolean }[]> {
   if (!p.baseUrl) throw new Error('Set the base URL first');
   if (p.kind === 'lmstudio') {
-    const r = await fetch(p.baseUrl.replace(/\/v1$/, '/api/v0/models'), { signal: AbortSignal.timeout(10_000) }).catch(() => null);
+    // send the key too: LM Studio can require one for every endpoint
+    const r = await fetch(p.baseUrl.replace(/\/v1$/, '/api/v0/models'), { headers: headers(p as ProviderConfig), signal: AbortSignal.timeout(10_000) }).catch(() => null);
     if (r?.ok) {
       const rows: any[] = ((await r.json()) as any).data ?? [];
       return rows

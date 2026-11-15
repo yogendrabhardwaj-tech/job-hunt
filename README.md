@@ -1,4 +1,4 @@
-# Agency — personal job-hunt workspace
+# Job Hunt Alpha — personal job-hunt workspace
 
 A localhost web app with an AI agent that tracks the roles you apply to, scores your resume against each job, and writes a tailored copy for each one. The agent runs on the **Claude Agent SDK** and uses the 22 playbooks from [paramchoudhary/resumeskills](https://github.com/paramchoudhary/resumeskills) (MIT, vendored in `.claude/skills/`).
 

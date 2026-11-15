@@ -9,6 +9,10 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
     body: body ? (isForm ? body : JSON.stringify(body)) : undefined,
   });
   const data = await res.json().catch(() => ({}));
+  // signed out (or the session expired): go to sign-in, then come back here
+  if (res.status === 401 && (data as any).code === 'auth' && !/^\/(login|signup)/.test(location.pathname)) {
+    location.assign(`/login?next=${encodeURIComponent(location.pathname + location.search)}`);
+  }
   if (!res.ok) throw new Error((data as any).error || res.statusText);
   return data as T;
 }

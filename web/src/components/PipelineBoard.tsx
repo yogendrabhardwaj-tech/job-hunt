@@ -31,7 +31,7 @@ function daysSince(iso: string) {
 }
 
 function nextAction(j: Job): string {
-  if (!j.details) return 'Scanning posting';
+  if (!j.details) return j.scan.state === 'error' ? 'Scan failed · retry' : 'Scanning posting';
   if (!j.analysis) return 'Scoring match';
   if (j.status === 'saved') return j.tailored ? 'Ready to submit' : 'Tailor resume';
   if (j.status === 'applied') {

@@ -1,3 +1,4 @@
+import { waitUntil } from '@vercel/functions';
 import * as store from './store.ts';
 import { runAgent, skill, RESUME_FORMAT } from './agent.ts';
 import { createTask, emit, finishTask, findRunning, pushEvent } from './tasks.ts';
@@ -38,7 +39,7 @@ function launch(kind: TaskKind, title: string, jobId: string | undefined, fn: (t
   const existing = findRunning(kind, jobId);
   if (existing) return existing as Task;
   const task = createTask(kind, title, jobId);
-  fn(task)
+  const run = fn(task)
     .then(() => {
       pushEvent(task, { type: 'done', text: 'Completed' });
       finishTask(task);
@@ -52,6 +53,9 @@ function launch(kind: TaskKind, title: string, jobId: string | undefined, fn: (t
         emit({ type: 'job', jobId });
       }
     });
+  // On Vercel the function would otherwise be frozen as soon as the response is sent, leaving the task
+  // half done forever. waitUntil keeps it running until the work finishes (up to the function's time limit).
+  waitUntil(run);
   return task;
 }
 
@@ -59,6 +63,18 @@ function launch(kind: TaskKind, title: string, jobId: string | undefined, fn: (t
 
 export function startScan(jobId: string) {
   return launch('scan', 'Scan job posting', jobId, async (task) => {
+    try {
+      await scan(task, jobId);
+    } catch (e: any) {
+      store.failScan(jobId, e.message);
+      emit({ type: 'job', jobId });
+      throw e;
+    }
+  });
+}
+
+async function scan(task: Task, jobId: string) {
+  {
     store.updateJob(jobId, { scan: { state: 'running' } });
     emit({ type: 'job', jobId });
     const job = store.getJob(jobId)!;
@@ -110,7 +126,7 @@ Call save_job_details exactly once with jobId "${jobId}". Strip page chrome (coo
     }
     emit({ type: 'job', jobId });
     if (store.readMaster()) startAnalyze(jobId, 'master');
-  });
+  }
 }
 
 // ---------------------------------------------------------------- analyze
@@ -250,7 +266,7 @@ Call save_master_resume once with the Markdown and the contact fields you can fi
 
 // ---------------------------------------------------------------- chat
 
-const CHAT_SYSTEM = `You are "Agency", the user's personal AI career agent inside their job-hunt workspace (a local web app).
+const CHAT_SYSTEM = `You are "Alpha", the user's personal AI career agent inside Job Hunt Alpha, their job-hunt workspace (a local web app).
 You can read and change their data through tools: profile & master resume, job applications, tailored resume copies, cover letters,
 interview prep, statuses and notes. You also have the resumeskills playbooks available via the Skill tool (resume-tailor,
 job-description-analyzer, resume-ats-optimizer, resume-bullet-writer, cover-letter-generator, interview-prep-generator,
@@ -268,7 +284,7 @@ How to work:
 - Be concise. Use short Markdown. Reference jobs by id + title.
 ${RESUME_FORMAT}`;
 
-export function runChat(message: string, opts: { sessionId?: string; jobId?: string; page?: string }) {
+export function runChat(message: string, opts: { sessionId?: string; jobId?: string; page?: string; sourceId?: string }) {
   const task = createTask('chat', message.slice(0, 80), opts.jobId);
   const ctx = [
     opts.page ? `User is on page: ${opts.page}` : '',
@@ -282,6 +298,7 @@ export function runChat(message: string, opts: { sessionId?: string; jobId?: str
     web: true,
     skills: true,
     resume: opts.sessionId,
+    sourceId: opts.sourceId,
     maxTurns: 40,
     system: CHAT_SYSTEM,
     prompt: ctx ? `<context>\n${ctx}\n</context>\n\n${message}` : message,

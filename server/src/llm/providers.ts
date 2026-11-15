@@ -1,6 +1,7 @@
 import { nanoid } from 'nanoid';
 import { now } from '../store.ts';
 import * as storage from '../storage.ts';
+import { currentUserId, maybeUserId, userKey } from '../context.ts';
 
 /**
  * AI sources ("providers") and the router that spreads agent runs across them.
@@ -98,7 +99,7 @@ export const PRESETS: Record<ProviderKind, { label: string; baseUrl: string; nee
     baseUrl: 'http://localhost:1234/v1',
     needsKey: false,
     modelHint: 'the model identifier shown in LM Studio',
-    note: 'In LM Studio open Developer and start the server. To use it from another machine, turn on "Serve on local network" and use http://<that-machine-ip>:1234/v1. Load a model that supports tool use, with a context length of at least 32k.',
+    note: 'In LM Studio open Developer and start the server. To use it from another machine, turn on "Serve on local network" and use http://<that-machine-ip>:1234/v1. Load a model that supports tool use, with a context length of at least 32k. If you turned on authentication in LM Studio\'s server settings, paste one of its API tokens as the key.',
   },
   'openai-compatible': {
     label: 'Other (OpenAI-compatible)',
@@ -119,10 +120,13 @@ export const PRESETS: Record<ProviderKind, { label: string; baseUrl: string; nee
 const FILE = 'settings.json';
 const today = () => new Date().toISOString().slice(0, 10);
 
+/** Uses the Claude CLI login of the machine the server runs on, so only offered when running locally. */
+export const claudeAllowed = !process.env.VERCEL;
+
 function defaults(): Settings {
   return {
     strategy: 'balanced',
-    providers: [
+    providers: claudeAllowed ? [
       {
         id: 'claude',
         kind: 'claude',
@@ -137,7 +141,7 @@ function defaults(): Settings {
         dailyLimit: 0,
         maxTokens: 0,
       },
-    ],
+    ] : [],
     usage: {},
   };
 }
@@ -151,6 +155,13 @@ function defaults(): Settings {
  */
 const INCLUDED_KEY = (process.env.OPENROUTER_API_KEY ?? '').trim();
 export const INCLUDED_ID = 'included-free';
+// OpenRouter keys look like sk-or-v1-<64 hex>. Describe a key that doesn't, without revealing it, so a bad
+// paste (quotes, "Bearer ", a line break, the variable name) shows up in the logs.
+if (INCLUDED_KEY && !/^sk-or-v1-[0-9a-f]{64}$/.test(INCLUDED_KEY))
+  console.warn(
+    `[providers] OPENROUTER_API_KEY doesn't look like an OpenRouter key: ${INCLUDED_KEY.length} characters, starts "${INCLUDED_KEY.slice(0, 6).replace(/[A-Za-z0-9]/g, (c, i) => (i < 6 && /^sk-or-/.test(INCLUDED_KEY) ? c : '•'))}", ` +
+      `whitespace inside: ${/\s/.test(INCLUDED_KEY)}, quotes: ${/["']/.test(INCLUDED_KEY)}, "=" inside: ${INCLUDED_KEY.includes('=')}, "Bearer": ${/bearer/i.test(INCLUDED_KEY)}`,
+  );
 const INCLUDED_NOTE =
   'Included with the app, no key needed. Runs free models through OpenRouter (openrouter/free picks one at random). Free models are rate-limited and shared by everyone using this app, so runs can be slow or paused at busy times; adding your own key avoids that. Some free model providers may log prompts, which here include your resume.';
 
@@ -185,8 +196,8 @@ function withIncluded(s: Settings): Settings {
   return s;
 }
 
-function load(): Settings {
-  const raw = storage.readText(FILE);
+function load(userId: string): Settings {
+  const raw = storage.readText(userKey(FILE, userId));
   if (!raw) return withIncluded(defaults());
   const s: Settings = { ...defaults(), ...JSON.parse(raw) };
   // sources from before BYOK: a key already on disk was saved on purpose
@@ -194,15 +205,29 @@ function load(): Settings {
   return withIncluded(s);
 }
 
-const settings = load();
+/** Each user's AI settings, loaded on first use. */
+const all = new Map<string, Settings>();
+
+/** The signed-in user's AI settings. */
+function S(): Settings {
+  const id = currentUserId();
+  let s = all.get(id);
+  if (!s) all.set(id, (s = load(id)));
+  return s;
+}
+
+/** Drop cached settings so they're re-read from storage (after data is moved into an account). */
+export function forget(userId: string) {
+  all.delete(userId);
+}
 
 function persist() {
-  storage.writeText(FILE, JSON.stringify(settings, null, 2));
+  storage.writeText(userKey(FILE), JSON.stringify(S(), null, 2));
 }
 
 function usage(id: string): ProviderUsage {
-  let u = settings.usage[id];
-  if (!u) u = settings.usage[id] = { day: today(), runs: 0, requests: 0, promptTokens: 0, completionTokens: 0, failures: 0, totalRuns: 0 };
+  let u = S().usage[id];
+  if (!u) u = S().usage[id] = { day: today(), runs: 0, requests: 0, promptTokens: 0, completionTokens: 0, failures: 0, totalRuns: 0 };
   if (u.day !== today()) Object.assign(u, { day: today(), runs: 0, requests: 0, promptTokens: 0, completionTokens: 0, failures: 0 });
   return u;
 }
@@ -214,7 +239,8 @@ const SESSION_TTL = 3 * 60_000;
 /** After the tab says it is closing: long enough for a reload to check back in. */
 const CLOSE_GRACE = 15_000;
 
-const sessions = new Map<string, { expires: number; keys: Map<string, string> }>();
+/** Browser-tab sessions. Each belongs to the user signed in on that tab; keys are only ever used for that user. */
+const sessions = new Map<string, { userId?: string; expires: number; keys: Map<string, string> }>();
 
 export const validSessionId = (id: unknown): id is string => typeof id === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(id);
 
@@ -226,9 +252,16 @@ setInterval(sweep, 15_000).unref();
 
 /** The tab is still open. Creates the session on first contact. */
 export function touchSession(sid: string) {
+  const userId = maybeUserId();
   const s = sessions.get(sid);
-  if (s) s.expires = Date.now() + SESSION_TTL;
-  else sessions.set(sid, { expires: Date.now() + SESSION_TTL, keys: new Map() });
+  // a different user signed in on this tab: start clean so the previous user's keys can't carry over
+  if (s && s.userId === userId) s.expires = Date.now() + SESSION_TTL;
+  else sessions.set(sid, { userId, expires: Date.now() + SESSION_TTL, keys: new Map() });
+}
+
+/** Signing out: forget every key entered in this tab. */
+export function dropSession(sid: string) {
+  sessions.delete(sid);
 }
 
 /** The tab is closing (or reloading). Keys go unless the tab checks back in within the grace period. */
@@ -245,7 +278,9 @@ function setSessionKey(sid: string | undefined, providerId: string, key: string)
 
 function sessionKey(providerId: string): string {
   sweep();
+  const userId = currentUserId();
   for (const s of sessions.values()) {
+    if (s.userId !== userId) continue;
     const k = s.keys.get(providerId);
     if (k) return k;
   }
@@ -253,7 +288,8 @@ function sessionKey(providerId: string): string {
 }
 
 function dropSessionKeys(providerId: string) {
-  for (const s of sessions.values()) s.keys.delete(providerId);
+  const userId = currentUserId();
+  for (const s of sessions.values()) if (s.userId === userId) s.keys.delete(providerId);
 }
 
 /** The key in effect for a source: the saved one, else one entered in an open browser tab. */
@@ -278,7 +314,7 @@ function applyKey(p: ProviderConfig, input: Partial<ProviderConfig>, prevKey: st
 
 /** Forget a source's key everywhere: on disk and in every open session. */
 export function forgetKey(id: string) {
-  const p = settings.providers.find((x) => x.id === id);
+  const p = S().providers.find((x) => x.id === id);
   if (!p) throw new Error('Source not found');
   if (p.builtin) throw new Error('The included source has no key of yours to forget');
   p.apiKey = '';
@@ -315,6 +351,7 @@ function sanitize(input: Partial<ProviderConfig>, base: ProviderConfig): Provide
 export function addProvider(input: Partial<ProviderConfig>, sid?: string): ProviderConfig {
   const kind = (input.kind ?? 'openai-compatible') as ProviderKind;
   if (!(kind in PRESETS)) throw new Error(`Unknown source type ${kind}`);
+  if (kind === 'claude' && !claudeAllowed) throw new Error('The Claude plan source only works when the app runs on your own computer');
   const blank: ProviderConfig = {
     id: nanoid(8),
     kind,
@@ -331,59 +368,60 @@ export function addProvider(input: Partial<ProviderConfig>, sid?: string): Provi
   };
   const p = sanitize(input, blank);
   applyKey(p, input, '', sid);
-  settings.providers.push(p);
+  S().providers.push(p);
   persist();
   return p;
 }
 
 export function updateProvider(id: string, patch: Partial<ProviderConfig>, sid?: string): ProviderConfig {
-  const i = settings.providers.findIndex((p) => p.id === id);
+  const i = S().providers.findIndex((p) => p.id === id);
   if (i < 0) throw new Error('Source not found');
-  const prevKey = settings.providers[i].apiKey;
-  if (settings.providers[i].builtin) {
+  const prevKey = S().providers[i].apiKey;
+  if (S().providers[i].builtin) {
     // the app's key and endpoint aren't the user's to change
     const { apiKey, saveKey, baseUrl, ...rest } = patch;
     patch = rest;
   }
-  settings.providers[i] = sanitize({ ...patch, kind: settings.providers[i].kind }, settings.providers[i]);
+  S().providers[i] = sanitize({ ...patch, kind: S().providers[i].kind }, S().providers[i]);
   // only touch keys when the patch is about keys (toggling "enabled" must not move a key around)
-  if (patch.apiKey || patch.saveKey !== undefined) applyKey(settings.providers[i], patch, prevKey, sid);
+  if (patch.apiKey || patch.saveKey !== undefined) applyKey(S().providers[i], patch, prevKey, sid);
   // config changed — give it a fresh chance
   delete usage(id).cooldownUntil;
   persist();
-  return settings.providers[i];
+  return S().providers[i];
 }
 
 export function removeProvider(id: string) {
   if (getProvider(id)?.builtin) throw new Error('The included source can be turned off but not removed');
-  settings.providers = settings.providers.filter((p) => p.id !== id);
-  delete settings.usage[id];
+  S().providers = S().providers.filter((p) => p.id !== id);
+  delete S().usage[id];
   dropSessionKeys(id);
   persist();
 }
 
 export function reorder(ids: string[]) {
   const pos = new Map(ids.map((id, i) => [id, i]));
-  settings.providers.sort((a, b) => (pos.get(a.id) ?? 999) - (pos.get(b.id) ?? 999));
+  S().providers.sort((a, b) => (pos.get(a.id) ?? 999) - (pos.get(b.id) ?? 999));
   persist();
 }
 
 export function setStrategy(s: Strategy) {
   if (s !== 'balanced' && s !== 'priority') throw new Error('bad strategy');
-  settings.strategy = s;
+  S().strategy = s;
   persist();
 }
 
 export function getProvider(id: string) {
-  return settings.providers.find((p) => p.id === id);
+  return S().providers.find((p) => p.id === id);
 }
 
 /** What the browser sees: keys masked, plus today's usage and current availability. */
 export function publicSettings() {
   return {
-    strategy: settings.strategy,
+    strategy: S().strategy,
     presets: PRESETS,
-    providers: settings.providers.map((p) => {
+    claudeAllowed,
+    providers: S().providers.map((p) => {
       const { apiKey, ...rest } = p;
       const key = keyFor(p);
       return {
@@ -421,9 +459,9 @@ export function availability(p: ProviderConfig): Availability {
 
 /** Ordered list of sources to try for one run: primary sources (by strategy), then fallback-only ones. */
 export function routeOrder(): ProviderConfig[] {
-  const live = settings.providers.filter((p) => availability(p).ok);
+  const live = S().providers.filter((p) => availability(p).ok);
   const primary = live.filter((p) => !p.fallbackOnly);
-  if (settings.strategy === 'balanced') {
+  if (S().strategy === 'balanced') {
     const load = (p: ProviderConfig) => usage(p.id).runs / p.weight;
     primary.sort((a, b) => load(a) - load(b) || (usage(a.id).lastUsed ?? '').localeCompare(usage(b.id).lastUsed ?? ''));
   }
@@ -431,7 +469,7 @@ export function routeOrder(): ProviderConfig[] {
 }
 
 export function whyNothingAvailable(): string {
-  const reasons = settings.providers.map((p) => `${p.name}: ${(availability(p) as { reason: string }).reason}`);
+  const reasons = S().providers.map((p) => `${p.name}: ${(availability(p) as { reason: string }).reason}`);
   return `No AI source is available${reasons.length ? ` (${reasons.join('; ')})` : ''}. Add or enable one on the Settings page.`;
 }
 
@@ -473,9 +511,9 @@ export function clearCooldown(id: string) {
 }
 
 export function summary(): string {
-  const primary = settings.providers.filter((p) => !p.fallbackOnly && availability(p).ok);
+  const primary = S().providers.filter((p) => !p.fallbackOnly && availability(p).ok);
   if (primary.length === 1) return `${primary[0].name} · ${primary[0].model}`;
-  if (primary.length > 1) return `${primary.length} free sources · ${settings.strategy}`;
+  if (primary.length > 1) return `${primary.length} free sources · ${S().strategy}`;
   const any = routeOrder()[0];
   return any ? `${any.name} · ${any.model}` : 'no AI source';
 }
