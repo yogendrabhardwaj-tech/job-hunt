@@ -121,6 +121,10 @@ export interface ProviderConfig {
   maxTokens: number;
   /** Remember the key on disk; otherwise it's kept for this browser session only. */
   saveKey: boolean;
+  /** The app's included free source: key comes from the server, not the user. */
+  builtin: boolean;
+  /** Explanation shown for the included source. */
+  note?: string;
   /** A key is in effect (saved, or entered in an open tab). */
   apiKeySet: boolean;
   keySaved: boolean;

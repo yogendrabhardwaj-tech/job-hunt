@@ -92,6 +92,12 @@ export function SettingsPage() {
           Use your own account with one of these services. Keys stay on this computer and are sent only to the service they belong to. Unless you choose
           to save a key, it’s forgotten when you close this tab.
         </p>
+        {s.providers.some((p) => p.builtin) && (
+          <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-900 ring-1 ring-inset ring-emerald-200">
+            <b>No key? You can still use the app.</b> Free models are included and run automatically whenever none of your own keys is set up. They’re
+            shared and rate-limited, so your own key is faster and more reliable.
+          </p>
+        )}
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
           {BYOK.map(({ kind, blurb }) => {
             const have = s.providers.filter((p) => p.kind === kind);
@@ -266,6 +272,7 @@ function SourceRow({
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-semibold text-slate-900">{p.name}</span>
             <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">{s.presets[p.kind].label}</span>
+            {p.builtin && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800 ring-1 ring-inset ring-emerald-200">Included · free</span>}
             {p.fallbackOnly && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200">Fallback only</span>}
             <Availability p={p} />
           </div>
@@ -281,7 +288,8 @@ function SourceRow({
             {s.strategy === 'balanced' && !p.fallbackOnly && <span>Weight {p.weight}</span>}
             {u.lastUsed && <span>Last used {timeAgo(u.lastUsed)}</span>}
           </div>
-          {preset.needsKey && p.apiKeySet && (
+          {p.builtin && p.note && <p className="mt-1.5 text-xs text-slate-600">{p.note}</p>}
+          {preset.needsKey && p.apiKeySet && !p.builtin && (
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
               <span className="inline-flex items-center gap-1">
                 <KeyRound className="size-3" />
@@ -323,9 +331,9 @@ function SourceRow({
           <Button size="sm" variant="ghost" onClick={onEdit} icon={<Pencil className="size-3.5" />}>
             Edit
           </Button>
-          <button aria-label={`Remove ${p.name}`} onClick={onDelete} className="rounded-lg p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-700">
+          {!p.builtin && <button aria-label={`Remove ${p.name}`} onClick={onDelete} className="rounded-lg p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-700">
             <Trash2 className="size-4" />
-          </button>
+          </button>}
           <Switch on={p.enabled} onClick={onToggle} label={`${p.enabled ? 'Turn off' : 'Turn on'} ${p.name}`} />
         </div>
       </div>
@@ -373,6 +381,8 @@ function SourceEditor({ settings, initial, onSave, onCancel }: { settings: AISet
   const preset = settings.presets[d.kind];
   const saved = settings.providers.find((p) => p.id === initial.id);
   const isClaude = d.kind === 'claude';
+  /** Endpoint and key are managed for this source, not entered by the user. */
+  const managed = isClaude || !!saved?.builtin;
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((x) => ({ ...x, [k]: v }));
 
   const loadModels = async () => {
@@ -406,18 +416,18 @@ function SourceEditor({ settings, initial, onSave, onCancel }: { settings: AISet
           )}
         </div>
       </div>
-      <p className="mt-1 text-xs text-slate-600">{preset.note}</p>
+      <p className="mt-1 text-xs text-slate-600">{saved?.note ?? preset.note}</p>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <Field label="Name">
           <input value={d.name ?? ''} onChange={(e) => set('name', e.target.value)} className={inputCls} />
         </Field>
-        {!isClaude && (
+        {!managed && (
           <Field label="Base URL">
             <input value={d.baseUrl ?? ''} onChange={(e) => set('baseUrl', e.target.value)} placeholder="https://…/v1" className={inputCls + ' font-mono text-[12.5px]'} />
           </Field>
         )}
-        {!isClaude && (
+        {!managed && (
           <Field label={preset.needsKey ? 'API key' : 'API key (optional)'}>
             <input
               type="password"
@@ -480,7 +490,7 @@ function SourceEditor({ settings, initial, onSave, onCancel }: { settings: AISet
             </Field>
           </>
         )}
-        {!isClaude && (
+        {!managed && (
           <SaveKeyChoice
             className="sm:col-span-2"
             checked={!!d.saveKey}

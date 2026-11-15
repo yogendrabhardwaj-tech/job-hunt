@@ -30,6 +30,13 @@ export function KeyHelpPage() {
         ))}
       </nav>
 
+      <Callout tone="info" title="Don’t have a key? You don’t need one to start">
+        When the app comes with free models included, they’re used automatically until you add a key of your own. They run through OpenRouter, are shared
+        by everyone using the app, and are rate-limited, so they can be slow or briefly unavailable. Your own key, even a free Google AI Studio one, is
+        faster and more reliable.
+      </Callout>
+      <div className="mb-5" />
+
       {/* ------------------------------------------------------------ Google */}
       <Section id="google" title="Google AI Studio (Gemini)" badge="Free tier">
         <p>
@@ -134,6 +141,10 @@ export function KeyHelpPage() {
           </li>
           <li>
             <b>Never shown back.</b> After you enter a key, the page shows only its last four characters. The key is sent only to the service it belongs to.
+          </li>
+          <li>
+            <b>Included free models</b> use the app’s own OpenRouter key, which is never shown to you. Some free model providers may log prompts, and
+            here those include your resume. Use your own key if that matters to you.
           </li>
           <li>
             <b>Closing the tab during a run</b> stops a session-only key from working, so any run still in progress on that source fails over to another
