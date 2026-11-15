@@ -1,6 +1,5 @@
 import * as cheerio from 'cheerio';
 import mammoth from 'mammoth';
-import { PDFParse } from 'pdf-parse';
 
 export const UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
@@ -132,9 +131,42 @@ export function guessPostingId(rawUrl: string): string {
   }
 }
 
+/**
+ * pdf-parse is loaded only when a PDF arrives, so a problem with it can never stop the server from starting.
+ * PDF.js expects DOMMatrix, ImageData and Path2D, normally from @napi-rs/canvas. That native package isn't always
+ * available (Vercel's arm64 servers don't get it from an x64 build), and reading text never draws, so simple
+ * stand-ins are enough when it's missing.
+ */
+let pdfParse: Promise<typeof import('pdf-parse')> | undefined;
+function loadPdfParse() {
+  return (pdfParse ??= (async () => {
+    const g = globalThis as any;
+    if (!g.DOMMatrix) {
+      try {
+        if (process.env.PDF_NO_CANVAS) throw new Error('skipped');
+        const c: any = await import('@napi-rs/canvas');
+        g.DOMMatrix ??= c.DOMMatrix;
+        g.ImageData ??= c.ImageData;
+        g.Path2D ??= c.Path2D;
+      } catch {
+        g.DOMMatrix = class DOMMatrix {
+          a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
+          constructor(init?: number[]) {
+            if (Array.isArray(init) && init.length === 6) [this.a, this.b, this.c, this.d, this.e, this.f] = init;
+          }
+        };
+        g.ImageData ??= class ImageData {};
+        g.Path2D ??= class Path2D {};
+      }
+    }
+    return import('pdf-parse');
+  })());
+}
+
 export async function fileToText(buf: Buffer, filename: string): Promise<string> {
   const ext = filename.toLowerCase().split('.').pop();
   if (ext === 'pdf') {
+    const { PDFParse } = await loadPdfParse();
     const parser = new PDFParse({ data: new Uint8Array(buf) });
     try {
       return (await parser.getText()).text;
