@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Briefcase, CircleHelp, Cpu, LogOut, FileText, LayoutDashboard, Loader2, Menu, Plus, Sparkles, UserRound, X } from 'lucide-react';
-import { useLive, useProfile } from '../lib/live';
+import { useLive, useProfile, BG_SCANS_KEY } from '../lib/live';
 import { api } from '../lib/api';
 import { cx } from '../lib/format';
 import { AgentPanel } from './AgentPanel';
@@ -169,7 +169,11 @@ export function Layout() {
           <button
             onClick={async () => {
               await auth.logout().catch(() => {});
-              location.assign('/login');
+              // the copilot chat is kept in this browser; don't leave it for whoever uses it next
+              localStorage.removeItem('agency.chat.v1');
+              sessionStorage.removeItem(BG_SCANS_KEY);
+              // signed out, the root shows the public home page
+              location.assign('/');
             }}
             title={user ? `Signed in as ${user.email}` : undefined}
             className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-[12.5px] text-slate-400 hover:bg-white/5 hover:text-slate-200"
