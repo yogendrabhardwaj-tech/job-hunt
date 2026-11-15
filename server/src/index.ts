@@ -96,10 +96,13 @@ app.delete(
     res.json(providers.publicSettings());
   }),
 );
-app.delete('/api/settings/providers/:id', (req, res) => {
-  providers.removeProvider(param(req, 'id'));
-  res.json(providers.publicSettings());
-});
+app.delete(
+  '/api/settings/providers/:id',
+  wrap((req, res) => {
+    providers.removeProvider(param(req, 'id'));
+    res.json(providers.publicSettings());
+  }),
+);
 /** Lists a source's models. Works for unsaved forms too: typed values win, then the stored source's key. */
 app.post(
   '/api/settings/models',

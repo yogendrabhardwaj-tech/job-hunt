@@ -31,6 +31,8 @@ export interface ProviderConfig {
   /** Max runs per day (UTC); 0 = no cap. */
   dailyLimit: number;
   maxTokens: number;
+  /** The app's own free source (see INCLUDED_ID). Its key comes from the server environment, never from users. */
+  builtin?: boolean;
 }
 
 export interface ProviderUsage {
@@ -140,13 +142,56 @@ function defaults(): Settings {
   };
 }
 
+// ---------------------------------------------------------------- included free source
+
+/**
+ * When the server has OPENROUTER_API_KEY, users who haven't brought a key of their own still get AI:
+ * a built-in source that runs OpenRouter's free models with the app's key. It's fallback-only, so any
+ * working key the user adds is used first. Users can turn it off but can't see, change or remove the key.
+ */
+const INCLUDED_KEY = (process.env.OPENROUTER_API_KEY ?? '').trim();
+export const INCLUDED_ID = 'included-free';
+const INCLUDED_NOTE =
+  'Included with the app, no key needed. Runs free models through OpenRouter (openrouter/free picks one at random). Free models are rate-limited and shared by everyone using this app, so runs can be slow or paused at busy times; adding your own key avoids that. Some free model providers may log prompts, which here include your resume.';
+
+function includedSource(): ProviderConfig {
+  return {
+    id: INCLUDED_ID,
+    kind: 'openrouter',
+    name: 'Free models (included)',
+    baseUrl: PRESETS.openrouter.baseUrl,
+    apiKey: '',
+    saveKey: false,
+    model: process.env.OPENROUTER_FREE_MODEL || 'openrouter/free',
+    enabled: true,
+    fallbackOnly: true,
+    weight: 1,
+    dailyLimit: Number(process.env.OPENROUTER_FREE_DAILY_RUNS || 0),
+    maxTokens: 8192,
+    builtin: true,
+  };
+}
+
+/** Adds the included source when the server has a key for it; hides it (without forgetting its settings) when not. */
+function withIncluded(s: Settings): Settings {
+  const i = s.providers.findIndex((p) => p.id === INCLUDED_ID);
+  if (!INCLUDED_KEY) {
+    if (i >= 0) s.providers.splice(i, 1);
+    return s;
+  }
+  // first among the fallbacks, so it's tried before a paid fallback such as the Claude plan
+  if (i < 0) s.providers.unshift(includedSource());
+  else s.providers[i] = { ...includedSource(), ...s.providers[i], apiKey: '', saveKey: false, builtin: true };
+  return s;
+}
+
 function load(): Settings {
   const raw = storage.readText(FILE);
-  if (!raw) return defaults();
+  if (!raw) return withIncluded(defaults());
   const s: Settings = { ...defaults(), ...JSON.parse(raw) };
   // sources from before BYOK: a key already on disk was saved on purpose
   for (const p of s.providers) p.saveKey ??= !!p.apiKey;
-  return s;
+  return withIncluded(s);
 }
 
 const settings = load();
@@ -212,7 +257,8 @@ function dropSessionKeys(providerId: string) {
 }
 
 /** The key in effect for a source: the saved one, else one entered in an open browser tab. */
-export function keyFor(p: Pick<ProviderConfig, 'apiKey'> & { id?: string }): string {
+export function keyFor(p: Pick<ProviderConfig, 'apiKey'> & { id?: string; builtin?: boolean }): string {
+  if (p.builtin || p.id === INCLUDED_ID) return INCLUDED_KEY;
   return p.apiKey || (p.id ? sessionKey(p.id) : '');
 }
 
@@ -234,6 +280,7 @@ function applyKey(p: ProviderConfig, input: Partial<ProviderConfig>, prevKey: st
 export function forgetKey(id: string) {
   const p = settings.providers.find((x) => x.id === id);
   if (!p) throw new Error('Source not found');
+  if (p.builtin) throw new Error('The included source has no key of yours to forget');
   p.apiKey = '';
   p.saveKey = false;
   dropSessionKeys(id);
@@ -293,6 +340,11 @@ export function updateProvider(id: string, patch: Partial<ProviderConfig>, sid?:
   const i = settings.providers.findIndex((p) => p.id === id);
   if (i < 0) throw new Error('Source not found');
   const prevKey = settings.providers[i].apiKey;
+  if (settings.providers[i].builtin) {
+    // the app's key and endpoint aren't the user's to change
+    const { apiKey, saveKey, baseUrl, ...rest } = patch;
+    patch = rest;
+  }
   settings.providers[i] = sanitize({ ...patch, kind: settings.providers[i].kind }, settings.providers[i]);
   // only touch keys when the patch is about keys (toggling "enabled" must not move a key around)
   if (patch.apiKey || patch.saveKey !== undefined) applyKey(settings.providers[i], patch, prevKey, sid);
@@ -303,6 +355,7 @@ export function updateProvider(id: string, patch: Partial<ProviderConfig>, sid?:
 }
 
 export function removeProvider(id: string) {
+  if (getProvider(id)?.builtin) throw new Error('The included source can be turned off but not removed');
   settings.providers = settings.providers.filter((p) => p.id !== id);
   delete settings.usage[id];
   dropSessionKeys(id);
@@ -335,10 +388,13 @@ export function publicSettings() {
       const key = keyFor(p);
       return {
         ...rest,
+        builtin: !!p.builtin,
+        note: p.builtin ? INCLUDED_NOTE : undefined,
         apiKeySet: !!key,
         keySaved: !!apiKey,
-        keyInSession: !apiKey && !!key,
-        apiKeyHint: key ? `…${key.slice(-4)}` : '',
+        keyInSession: !apiKey && !!key && !p.builtin,
+        // never hint at the app's own key
+        apiKeyHint: key && !p.builtin ? `…${key.slice(-4)}` : '',
         usage: usage(p.id),
         availability: availability(p),
       };
