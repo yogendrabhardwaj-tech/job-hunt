@@ -106,7 +106,7 @@ export interface ResumeFile {
 
 // ---------------------------------------------------------------- AI sources (server/src/llm/providers.ts)
 
-export type ProviderKind = 'openrouter' | 'openai' | 'huggingface' | 'google' | 'lmstudio' | 'openai-compatible' | 'claude';
+export type ProviderKind = 'openrouter' | 'nararouter' | 'openai' | 'huggingface' | 'google' | 'lmstudio' | 'openai-compatible' | 'claude';
 
 export interface ProviderConfig {
   id: string;

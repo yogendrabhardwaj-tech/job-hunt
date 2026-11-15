@@ -7,7 +7,7 @@ import { Button, Card, SectionTitle, Skeleton, inputCls } from '../components/ui
 import { cx, timeAgo } from '../lib/format';
 import type { AISettings, ModelInfo, ProviderConfig, ProviderKind } from '../lib/types';
 
-const ADDABLE: ProviderKind[] = ['openrouter', 'openai', 'huggingface', 'google', 'lmstudio', 'openai-compatible', 'claude'];
+const ADDABLE: ProviderKind[] = ['openrouter', 'nararouter', 'openai', 'huggingface', 'google', 'lmstudio', 'openai-compatible', 'claude'];
 
 type Draft = Partial<ProviderConfig> & { kind: ProviderKind; apiKey?: string };
 

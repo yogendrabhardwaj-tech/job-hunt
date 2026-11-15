@@ -450,7 +450,7 @@ export function mountAuth(app: Express) {
   });
 
   /** Public facts for the home page (no sign-in needed). */
-  app.get('/api/auth/config', (_req, res) => res.json({ freeModels: !!process.env.OPENROUTER_API_KEY?.trim() }));
+  app.get('/api/auth/config', (_req, res) => res.json({ freeModels: providers.hasIncluded() }));
 
   app.get('/api/auth/me', async (req, res) => {
     try {
