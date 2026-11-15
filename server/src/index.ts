@@ -273,10 +273,10 @@ app.post(
 // ---------------------------------------------------------------- agent chat (streams the task's events as SSE)
 
 app.post('/api/chat', (req, res) => {
-  const { message, sessionId, jobId, page } = req.body ?? {};
+  const { message, sessionId, jobId, page, sourceId } = req.body ?? {};
   if (!message) return void res.status(400).json({ error: 'message required' });
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
-  const { task, promise } = wf.runChat(String(message), { sessionId, jobId, page });
+  const { task, promise } = wf.runChat(String(message), { sessionId, jobId, page, sourceId: typeof sourceId === 'string' && sourceId ? sourceId : undefined });
   const send = (o: unknown) => res.write(`data: ${JSON.stringify(o)}\n\n`);
   send({ type: 'task', taskId: task.id });
   const on = (m: BusMessage) => {

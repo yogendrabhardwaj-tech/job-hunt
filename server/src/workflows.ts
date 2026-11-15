@@ -284,7 +284,7 @@ How to work:
 - Be concise. Use short Markdown. Reference jobs by id + title.
 ${RESUME_FORMAT}`;
 
-export function runChat(message: string, opts: { sessionId?: string; jobId?: string; page?: string }) {
+export function runChat(message: string, opts: { sessionId?: string; jobId?: string; page?: string; sourceId?: string }) {
   const task = createTask('chat', message.slice(0, 80), opts.jobId);
   const ctx = [
     opts.page ? `User is on page: ${opts.page}` : '',
@@ -298,6 +298,7 @@ export function runChat(message: string, opts: { sessionId?: string; jobId?: str
     web: true,
     skills: true,
     resume: opts.sessionId,
+    sourceId: opts.sourceId,
     maxTurns: 40,
     system: CHAT_SYSTEM,
     prompt: ctx ? `<context>\n${ctx}\n</context>\n\n${message}` : message,
