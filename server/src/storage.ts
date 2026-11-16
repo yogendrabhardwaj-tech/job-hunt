@@ -42,7 +42,7 @@ const isPrivate = (key: string) => key.endsWith('settings.json') || key === 'use
  * their owner signs in and claims them.
  */
 const isMirrored = (key: string) =>
-  key === 'users.json' || /^(users\/[\w-]+\/)?(db\.json|settings\.json|resumes\/[\w.-]+\.md)$/.test(key);
+  key === 'users.json' || /^(users\/[\w-]+\/)?(db\.json|settings\.json|usage-log\.json|resumes\/[\w.-]+\.md)$/.test(key);
 
 interface Entry {
   content: string;

@@ -1,5 +1,5 @@
 import { sessionId } from './session';
-import type { AISettings, DuplicateMatch, Job, ModelInfo, Profile, ProviderConfig, ResumeFile, TaskSummary } from './types';
+import type { AdminOverview, AISettings, DuplicateMatch, Job, ModelInfo, Profile, ProviderConfig, ResumeFile, TaskSummary } from './types';
 
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   const isForm = body instanceof FormData;
@@ -19,6 +19,7 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
 
 export const api = {
   meta: () => req<{ model: string }>('GET', '/api/meta'),
+  adminOverview: (days: 7 | 30 | 90) => req<AdminOverview>('GET', `/api/admin/overview?days=${days}`),
   profile: () => req<{ profile: Profile; master: string }>('GET', '/api/profile'),
   saveProfile: (p: Partial<Profile>) => req<Profile>('PUT', '/api/profile', p),
   importResume: (fd: FormData) => req<{ task: TaskSummary }>('POST', '/api/profile/import', fd),

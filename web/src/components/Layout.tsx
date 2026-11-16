@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Briefcase, CircleHelp, Cpu, LogOut, FileText, LayoutDashboard, Loader2, Menu, Plus, Sparkles, UserRound, X } from 'lucide-react';
+import { Briefcase, ChartColumn, CircleHelp, Cpu, LogOut, FileText, LayoutDashboard, Loader2, Menu, Plus, Sparkles, UserRound, X } from 'lucide-react';
 import { useLive, useProfile, BG_SCANS_KEY } from '../lib/live';
 import { api } from '../lib/api';
 import { cx } from '../lib/format';
@@ -28,6 +28,7 @@ export function Layout() {
   const [menuOpen, setMenuOpen] = useState(false);
   const loc = useLocation();
   const running = tasks.filter((t) => t.state === 'running');
+  const nav = user?.isAdmin ? [...NAV, { to: '/admin', label: 'Admin', icon: ChartColumn, end: false }] : NAV;
 
   useEffect(() => {
     api.meta().then((m) => setModel(m.model)).catch(() => {});
@@ -69,7 +70,7 @@ export function Layout() {
         </button>
         {menuOpen && (
           <div className="absolute inset-x-0 top-14 border-t border-white/10 bg-night p-3 shadow-2xl">
-            {NAV.map(({ to, label, icon: Icon, end }) => (
+            {nav.map(({ to, label, icon: Icon, end }) => (
               <NavLink
                 key={to}
                 to={to}
@@ -115,7 +116,7 @@ export function Layout() {
         </div>
 
         <div className="relative mt-4 space-y-0.5 px-3">
-          {NAV.map(({ to, label, icon: Icon, end }) => (
+          {nav.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}

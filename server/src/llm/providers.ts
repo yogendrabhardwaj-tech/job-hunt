@@ -2,6 +2,7 @@ import { nanoid } from 'nanoid';
 import { now } from '../store.ts';
 import * as storage from '../storage.ts';
 import { currentUserId, maybeUserId, userKey } from '../context.ts';
+import { logUsage } from '../usageLog.ts';
 
 /**
  * AI sources ("providers") and the router that spreads agent runs across them.
@@ -534,17 +535,26 @@ export function whyNothingAvailable(): string {
 /** Called when a source is picked, so concurrent runs spread out before any of them finish. */
 export function beginRun(id: string) {
   const u = usage(id);
+  logUsage({ runs: 1 });
   u.runs++;
   u.totalRuns++;
   u.lastUsed = now();
   persist();
 }
 
-export function recordRequest(id: string, tokens?: { prompt?: number; completion?: number }) {
+/** One request to a source. `estimate` is used for the usage history when the source reported no token counts. */
+export function recordRequest(id: string, tokens?: { prompt?: number; completion?: number }, estimate?: { prompt: number; completion: number }) {
   const u = usage(id);
   u.requests++;
   u.promptTokens += tokens?.prompt ?? 0;
   u.completionTokens += tokens?.completion ?? 0;
+  const reported = tokens?.prompt != null || tokens?.completion != null;
+  logUsage({
+    requests: 1,
+    promptTokens: reported ? (tokens?.prompt ?? 0) : (estimate?.prompt ?? 0),
+    completionTokens: reported ? (tokens?.completion ?? 0) : (estimate?.completion ?? 0),
+    estimatedRequests: reported ? 0 : 1,
+  });
   persist();
 }
 
@@ -556,6 +566,7 @@ export function recordSuccess(id: string) {
 
 export function recordFailure(id: string, message: string, cooldownMs: number) {
   const u = usage(id);
+  logUsage({ failures: 1 });
   u.failures++;
   u.lastError = message.slice(0, 500);
   u.lastErrorAt = now();

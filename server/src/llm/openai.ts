@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk';
 import * as providers from './providers.ts';
 import type { ProviderConfig } from './providers.ts';
+import { estimateTokens } from '../usageLog.ts';
 
 /** Agent loop for any OpenAI-compatible /chat/completions endpoint (OpenRouter, HF router, Gemini, LM Studio, …). */
 
@@ -179,7 +180,14 @@ export async function complete(
     }
   }
 
-  providers.recordRequest(p.id, { prompt: usage?.prompt_tokens, completion: usage?.completion_tokens });
+  providers.recordRequest(
+    p.id,
+    { prompt: usage?.prompt_tokens, completion: usage?.completion_tokens },
+    {
+      prompt: estimateTokens(JSON.stringify(body.messages).length + (body.tools ? JSON.stringify(body.tools).length : 0)),
+      completion: estimateTokens(content.length + calls.reduce((n, c) => n + (c?.name.length ?? 0) + (c?.args.length ?? 0), 0)),
+    },
+  );
   const tool_calls = calls.filter((c) => c?.name).map((c) => ({ id: c.id || `call_${nanoid(8)}`, type: 'function' as const, function: { name: c.name, arguments: c.args || '{}' } }));
   return { message: { role: 'assistant', content: stripThink(content) || null, ...(tool_calls.length ? { tool_calls } : {}) }, finish };
 }

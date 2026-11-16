@@ -4,6 +4,8 @@ import { sessionId } from './session';
 export interface AuthUser {
   id: string;
   email: string;
+  /** Set for accounts listed in the server's ADMIN_EMAILS. */
+  isAdmin?: boolean;
 }
 
 export type SignupProfile = Partial<Record<'name' | 'phone' | 'location' | 'headline' | 'linkedinUrl' | 'targetRoles', string>>;

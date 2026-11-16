@@ -96,6 +96,15 @@ interface User {
 
 const USERS = 'users.json';
 const users = (): User[] => JSON.parse(storage.readText(USERS) ?? '[]');
+/** Every account (for the admin page). */
+export const listUsers = (): User[] => users();
+
+/** Admins are listed in ADMIN_EMAILS (comma-separated), so no address is written into the code. */
+export function isAdmin(email?: string) {
+  if (!email) return false;
+  const list = (process.env.ADMIN_EMAILS ?? '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+  return list.includes(email.toLowerCase());
+}
 const findUser = (email: string) => users().find((u) => u.email === email);
 
 /**
@@ -455,7 +464,7 @@ export function mountAuth(app: Express) {
   app.get('/api/auth/me', async (req, res) => {
     try {
       const u = await sessionUser(req);
-      u ? res.json({ user: { id: u.userId, email: u.email } }) : fail(res, 401, 'Not signed in');
+      u ? res.json({ user: { id: u.userId, email: u.email, isAdmin: isAdmin(u.email) } }) : fail(res, 401, 'Not signed in');
     } catch (e: any) {
       fail(res, 500, e.message);
     }
