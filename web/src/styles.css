@@ -3,14 +3,98 @@
 @theme {
   --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-serif: 'Charter', 'Georgia', 'Cambria', serif;
-  --color-brand-50: #eef2ff;
-  --color-brand-100: #e0e7ff;
-  --color-brand-500: #6366f1;
-  --color-brand-600: #4f46e5;
-  --color-brand-700: #4338ca;
+  --font-display: 'Inter Tight', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-accent: 'Instrument Serif', Georgia, serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --color-ink: #0f172a;
   --color-ink-muted: #5b6478;
+  --color-night: #05070f;
+  --color-night-2: #0a0f1f;
 }
+
+/* brand-* follows the chosen colour theme */
+@theme inline {
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-800: var(--brand-800);
+  --color-brand-900: var(--brand-900);
+}
+
+/* ---------- colour themes (lib/theme.ts sets data-theme on <html>; emerald is the default) ---------- */
+:root,
+:root[data-theme='emerald'] {
+  --brand-50: #ecfdf5;
+  --brand-100: #d1fae5;
+  --brand-200: #a7f3d0;
+  --brand-300: #6ee7b7;
+  --brand-400: #34d399;
+  --brand-500: #10b981;
+  --brand-600: #059669;
+  --brand-700: #047857;
+  --brand-800: #065f46;
+  --brand-900: #064e3b;
+  --jha-acc: #10b981;
+  --jha-acc-rgb: 16,185,129;
+  --jha-acc-light: rgb(88,206,167);
+  --jha-pale: rgb(171,230,211);
+  --jha-pale-rgb: 124,216,186;
+  --jha-glow: rgba(16,185,129, 0.55);
+  --jha-sec: #a3e635;
+  --jha-sec-rgb: 163,230,53;
+  --jha-sec-light: rgb(191,238,114);
+  --jha-sec-pale: rgb(218,245,174);
+}
+:root[data-theme='indigo'] {
+  --brand-50: #eef2ff;
+  --brand-100: #e0e7ff;
+  --brand-200: #c7d2fe;
+  --brand-300: #a5b4fc;
+  --brand-400: #818cf8;
+  --brand-500: #6366f1;
+  --brand-600: #4f46e5;
+  --brand-700: #4338ca;
+  --brand-800: #3730a3;
+  --brand-900: #312e81;
+  --jha-acc: #6366f1;
+  --jha-acc-rgb: 99,102,241;
+  --jha-acc-light: rgb(146,148,245);
+  --jha-pale: rgb(200,201,250);
+  --jha-pale-rgb: 169,171,247;
+  --jha-glow: rgba(99,102,241, 0.55);
+  --jha-sec: #22d3ee;
+  --jha-sec-rgb: 34,211,238;
+  --jha-sec-light: rgb(100,224,243);
+  --jha-sec-pale: rgb(167,237,248);
+}
+:root[data-theme='orchid'] {
+  --brand-50: #faf5ff;
+  --brand-100: #f3e8ff;
+  --brand-200: #e9d5ff;
+  --brand-300: #d8b4fe;
+  --brand-400: #c084fc;
+  --brand-500: #a855f7;
+  --brand-600: #9333ea;
+  --brand-700: #7e22ce;
+  --brand-800: #6b21a8;
+  --brand-900: #581c87;
+  --jha-acc: #a855f7;
+  --jha-acc-rgb: 168,85,247;
+  --jha-acc-light: rgb(194,136,249);
+  --jha-pale: rgb(225,196,252);
+  --jha-pale-rgb: 207,162,251;
+  --jha-glow: rgba(168,85,247, 0.55);
+  --jha-sec: #f472b6;
+  --jha-sec-rgb: 244,114,182;
+  --jha-sec-light: rgb(247,156,204);
+  --jha-sec-pale: rgb(251,199,226);
+}
+
 
 html,
 body,
@@ -176,3 +260,35 @@ mark.kw-miss {
     display: none !important;
   }
 }
+
+/* ---------- public home page (Midnight Signal) ---------- */
+.jha-grid {
+  background-image: linear-gradient(rgba(148, 163, 184, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.07) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, #000 30%, transparent 75%);
+}
+.jha-glass {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+  backdrop-filter: blur(14px);
+}
+.jha-home a:focus-visible,
+.jha-home button:focus-visible {
+  outline: 2px solid var(--jha-sec);
+  outline-offset: 3px;
+}
+.jha-btn { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.jha-btn:hover { transform: translateY(-1px); box-shadow: 0 10px 30px -6px var(--jha-glow); }
+.jha-tile { transition: border-color 0.2s ease, transform 0.2s ease; }
+.jha-tile:hover { border-color: rgba(var(--jha-pale-rgb), 0.35); transform: translateY(-2px); }
+.jha-pulse { animation: jhaPulse 2s ease-in-out infinite; }
+@keyframes jhaPulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.8); } }
+.jha-scan { background-size: 40% 100%; background-repeat: no-repeat; animation: jhaScan 2.4s linear infinite; }
+@keyframes jhaScan { 0% { background-position: -40% 0; } 100% { background-position: 140% 0; } }
+.jha-float { animation: jhaFloat 6s ease-in-out infinite; }
+@keyframes jhaFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@media (prefers-reduced-motion: reduce) {
+  .jha-pulse, .jha-scan, .jha-float { animation: none; }
+  .jha-btn:hover, .jha-tile:hover { transform: none; }
+}
+@keyframes jhaProgress { from { width: 0; } to { width: 100%; } }

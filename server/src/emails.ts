@@ -6,9 +6,9 @@
 
 export const BRAND = {
   name: 'Job Hunt Alpha',
-  color: '#4f46e5', // brand-600
-  colorDark: '#4338ca',
-  tint: '#eef2ff', // brand-50
+  color: '#047857', // emerald-700: white text on it passes 4.5:1
+  colorDark: '#065f46',
+  tint: '#ecfdf5', // emerald-50
   ink: '#0f172a',
   body: '#334155',
   muted: '#64748b',
@@ -42,7 +42,7 @@ function layout({ preheader, body, footer }: { preheader: string; body: string; 
       <tr><td style="padding:0 4px 20px;">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
           <td width="36" height="36" align="center" valign="middle" bgcolor="${b.color}"
-              style="width:36px;height:36px;border-radius:9px;background:${b.color};background-image:linear-gradient(135deg,#6366f1,${b.colorDark});font-family:${FONT};font-size:15px;font-weight:700;color:#ffffff;letter-spacing:0.02em;">JH</td>
+              style="width:36px;height:36px;border-radius:9px;background:${b.color};background-image:linear-gradient(135deg,#10b981,${b.colorDark});font-family:${FONT};font-size:15px;font-weight:700;color:#ffffff;letter-spacing:0.02em;">JH</td>
           <td style="padding-left:10px;font-family:${FONT};font-size:16px;font-weight:600;color:${b.ink};letter-spacing:-0.01em;">${esc(b.name)}</td>
         </tr></table>
       </td></tr>
@@ -50,7 +50,7 @@ function layout({ preheader, body, footer }: { preheader: string; body: string; 
       <!-- card -->
       <tr><td style="background:#ffffff;border:1px solid ${b.line};border-radius:14px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-          <tr><td height="4" style="height:4px;line-height:4px;font-size:0;background:${b.color};background-image:linear-gradient(90deg,#6366f1,${b.colorDark});border-radius:14px 14px 0 0;">&nbsp;</td></tr>
+          <tr><td height="4" style="height:4px;line-height:4px;font-size:0;background:${b.color};background-image:linear-gradient(90deg,#10b981,#a3e635);border-radius:14px 14px 0 0;">&nbsp;</td></tr>
           <tr><td style="padding:32px 32px 28px;font-family:${FONT};">${body}</td></tr>
         </table>
       </td></tr>
@@ -91,7 +91,7 @@ export function codeEmail({ code, purpose, to, appUrl, link }: { code: string; p
 ${button}
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-  <tr><td align="center" style="background:${b.tint};border:1px solid #e0e7ff;border-radius:12px;padding:22px 12px;">
+  <tr><td align="center" style="background:${b.tint};border:1px solid #d1fae5;border-radius:12px;padding:22px 12px;">
     <div style="font-family:'SF Mono',SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;font-size:34px;line-height:1;font-weight:700;letter-spacing:0.18em;color:${b.ink};">${spaced}</div>
     <div style="margin-top:10px;font-size:12px;line-height:1.4;color:${b.muted};">${link ? 'The button works for 5&nbsp;minutes, the code for 10' : 'Expires in 10&nbsp;minutes'}</div>
   </td></tr>

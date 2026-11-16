@@ -8,6 +8,7 @@ import { AgentPanel } from './AgentPanel';
 import { auth } from '../lib/auth';
 import { useAuth } from '../lib/useAuth';
 import { NewJobModal } from './NewJobModal';
+import { BrandMark, ThemeSwitcher } from './ThemeSwitcher';
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -57,17 +58,17 @@ export function Layout() {
   return (
     <div className="flex h-full flex-col md:flex-row">
       {/* ---------- phone / small tablet: top bar ---------- */}
-      <header className="relative z-30 flex h-14 shrink-0 items-center gap-2 bg-slate-950 px-3 text-slate-300 md:hidden">
+      <header className="relative z-30 flex h-14 shrink-0 items-center gap-2 border-b border-white/6 bg-night px-3 text-slate-300 md:hidden">
         <button onClick={() => setMenuOpen((o) => !o)} aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-expanded={menuOpen} className="rounded-lg p-2 hover:bg-white/10">
           {menuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
         </button>
         <Logo />
-        <span className="text-sm font-semibold tracking-tight text-white">Job Hunt Alpha</span>
+        <span className="font-display text-[15px] font-semibold tracking-[-0.01em] text-white">Job Hunt Alpha</span>
         <button onClick={() => setNewOpen(true)} className="ml-auto flex items-center gap-1.5 rounded-lg bg-white/[0.08] px-3 py-2 text-sm font-medium text-white ring-1 ring-inset ring-white/10">
           <Plus className="size-4" /> New role
         </button>
         {menuOpen && (
-          <div className="absolute inset-x-0 top-14 border-t border-white/10 bg-slate-950 p-3 shadow-2xl">
+          <div className="absolute inset-x-0 top-14 border-t border-white/10 bg-night p-3 shadow-2xl">
             {NAV.map(({ to, label, icon: Icon, end }) => (
               <NavLink
                 key={to}
@@ -79,20 +80,29 @@ export function Layout() {
                 {label}
               </NavLink>
             ))}
+            <div className="mt-3 flex items-center justify-between border-t border-white/8 px-3 pt-3">
+              <span className="text-xs text-slate-400">Colour theme</span>
+              <ThemeSwitcher size="sm" />
+            </div>
           </div>
         )}
       </header>
 
-      <nav className="hidden w-[232px] shrink-0 flex-col bg-slate-950 text-slate-300 md:flex">
-        <div className="flex h-14 items-center gap-2.5 px-4">
+      <nav className="relative hidden w-[232px] shrink-0 flex-col overflow-hidden border-r border-white/6 bg-night text-slate-300 md:flex">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -top-40 -left-24 size-[360px] opacity-40"
+          style={{ background: 'radial-gradient(closest-side, var(--jha-glow), transparent)' }}
+        />
+        <div className="relative flex h-14 items-center gap-2.5 px-4">
           <Logo />
           <div>
-            <div className="text-sm font-semibold tracking-tight text-white">Job Hunt Alpha</div>
+            <div className="font-display text-[15px] font-semibold tracking-[-0.01em] text-white">Job Hunt Alpha</div>
             <div className="text-[10.5px] text-slate-400">Your AI career agent</div>
           </div>
         </div>
 
-        <div className="px-3 pt-2">
+        <div className="relative px-3 pt-2">
           <button
             onClick={() => setNewOpen(true)}
             className="flex w-full items-center justify-between rounded-lg bg-white/[0.06] px-3 py-2 text-sm font-medium text-white ring-1 ring-inset ring-white/10 transition hover:bg-white/10"
@@ -104,7 +114,7 @@ export function Layout() {
           </button>
         </div>
 
-        <div className="mt-4 space-y-0.5 px-3">
+        <div className="relative mt-4 space-y-0.5 px-3">
           {NAV.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
@@ -146,7 +156,11 @@ export function Layout() {
           )}
         </div>
 
-        <div className="mt-auto space-y-3 p-3">
+        <div className="relative mt-auto space-y-3 p-3">
+          <div className="flex items-center justify-between px-3">
+            <span className="text-[11px] text-slate-400">Theme</span>
+            <ThemeSwitcher size="sm" />
+          </div>
           <button
             onClick={() => setAgentOpen(!agentOpen)}
             className={cx(
@@ -204,20 +218,14 @@ export function Layout() {
 }
 
 function Logo() {
-  return (
-    <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 shadow-lg shadow-brand-900/40">
-      <svg viewBox="0 0 32 32" className="size-5" aria-hidden>
-        <path d="M7 22l5-11 4 7 2.5-3.5L25 22" stroke="white" strokeWidth="2.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    </div>
-  );
+  return <BrandMark className="size-8 rounded-[9px]" />;
 }
 
 export function PageHeader({ title, sub, right }: { title: React.ReactNode; sub?: React.ReactNode; right?: React.ReactNode }) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-4 pb-6">
       <div className="min-w-0">
-        <h1 className="text-[22px] font-semibold tracking-tight text-slate-900">{title}</h1>
+        <h1 className="font-display text-[26px] font-semibold tracking-[-0.03em] text-slate-900">{title}</h1>
         {sub && <p className="mt-1 text-sm text-slate-500">{sub}</p>}
       </div>
       {right && <div className="flex items-center gap-2">{right}</div>}

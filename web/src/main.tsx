@@ -13,6 +13,7 @@ import { PrintResume } from './pages/PrintResume';
 import { SettingsPage } from './pages/Settings';
 import { KeyHelpPage } from './pages/KeyHelp';
 import { startSession } from './lib/session';
+import { applyTheme } from './lib/theme';
 import { LoginPage } from './pages/Login';
 import { SignupPage } from './pages/Signup';
 import { HomePage } from './pages/Home';
@@ -22,6 +23,7 @@ import { auth, type AuthUser } from './lib/auth';
 import { AuthContext } from './lib/useAuth';
 
 startSession();
+applyTheme();
 
 /** Everything inside needs a signed-in user; otherwise go to sign-in and come back afterwards. */
 function RequireAuth() {
