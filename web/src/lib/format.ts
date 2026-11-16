@@ -26,7 +26,7 @@ export const STATUSES = Object.keys(STATUS_META) as JobStatus[];
 export function band(score?: number) {
   if (score == null) return { label: 'Not scored', tone: 'text-slate-400', stroke: '#cbd5e1', bar: 'bg-slate-300' };
   if (score >= 75) return { label: 'Excellent fit', tone: 'text-emerald-700', stroke: '#059669', bar: 'bg-emerald-500' };
-  if (score >= 60) return { label: 'Good fit', tone: 'text-brand-700', stroke: '#4f46e5', bar: 'bg-brand-500' };
+  if (score >= 60) return { label: 'Good fit', tone: 'text-sky-700', stroke: '#0284c7', bar: 'bg-sky-500' };
   if (score >= 50) return { label: 'Stretch', tone: 'text-amber-700', stroke: '#d97706', bar: 'bg-amber-500' };
   return { label: 'Low match', tone: 'text-rose-700', stroke: '#e11d48', bar: 'bg-rose-500' };
 }

@@ -1,27 +1,45 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { CircleAlert, MailCheck } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Button, inputCls } from './ui';
+import { BrandMark, ThemeSwitcher } from './ThemeSwitcher';
 
-/** Centered card used by the sign-in and sign-up pages. */
+/** Centered card used by the sign-in and sign-up pages, on the same night background as the home page. */
 export function AuthShell({ title, sub, children, footer }: { title: string; sub?: ReactNode; children: ReactNode; footer?: ReactNode }) {
   return (
-    <div className="flex min-h-screen items-start justify-center bg-slate-50 px-4 py-10 sm:items-center">
-      <div className="w-full max-w-[460px]">
-        <div className="mb-6 flex items-center gap-2.5">
-          <div className="flex size-9 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 shadow-lg shadow-brand-900/30">
-            <svg viewBox="0 0 32 32" className="size-5" aria-hidden>
-              <path d="M7 22l5-11 4 7 2.5-3.5L25 22" stroke="white" strokeWidth="2.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+    <div className="relative flex min-h-screen flex-col overflow-hidden bg-night text-[#c4cbe0] antialiased">
+      <div aria-hidden className="jha-grid pointer-events-none absolute inset-0" />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -top-[300px] left-1/2 h-[700px] w-[900px] -translate-x-1/2 opacity-50"
+        style={{ background: 'radial-gradient(closest-side, var(--jha-glow), transparent)' }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-[220px] bottom-[-220px] size-[560px] opacity-70"
+        style={{ background: 'radial-gradient(closest-side, rgba(var(--jha-sec-rgb),0.18), transparent)' }}
+      />
+
+      <header className="relative mx-auto flex w-full max-w-[1200px] items-center justify-between gap-4 px-6 py-[18px]">
+        <Link to="/" className="flex items-center gap-2.5 text-white">
+          <BrandMark className="size-[34px] rounded-[10px]" />
+          <span className="font-display text-[17px] font-semibold tracking-[-0.01em]">Job Hunt Alpha</span>
+        </Link>
+        <ThemeSwitcher />
+      </header>
+
+      <main className="relative flex flex-1 items-start justify-center px-4 pt-6 pb-16 sm:items-center sm:pt-0">
+        <div className="w-full max-w-[460px]">
+          <div className="rounded-[20px] p-px shadow-[0_40px_100px_-30px_rgba(0,0,0,0.9)]" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.35), rgba(255,255,255,0.08))' }}>
+            <div className="rounded-[19px] bg-white p-6 text-slate-800 sm:p-8">
+              <h1 className="font-display text-[26px] font-semibold tracking-[-0.03em] text-slate-900">{title}</h1>
+              {sub && <p className="mt-1.5 text-sm text-slate-600">{sub}</p>}
+              <div className="mt-6">{children}</div>
+              {footer && <div className="mt-6 border-t border-slate-100 pt-5 text-center text-sm text-slate-600">{footer}</div>}
+            </div>
           </div>
-          <span className="text-[15px] font-semibold tracking-tight text-slate-900">Job Hunt Alpha</span>
         </div>
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.04)] sm:p-8">
-          <h1 className="text-xl font-semibold tracking-tight text-slate-900">{title}</h1>
-          {sub && <p className="mt-1.5 text-sm text-slate-600">{sub}</p>}
-          <div className="mt-6">{children}</div>
-        </div>
-        {footer && <div className="mt-4 text-center text-sm text-slate-600">{footer}</div>}
-      </div>
+      </main>
     </div>
   );
 }
