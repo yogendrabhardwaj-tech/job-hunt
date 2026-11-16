@@ -169,3 +169,69 @@ export interface ModelInfo {
   context?: number;
   free?: boolean;
 }
+
+// ---------------------------------------------------------------- admin
+
+export interface AdminDailyRow {
+  date: string;
+  rolesAdded: number;
+  resumesTailored: number;
+  runs: number;
+  requests: number;
+  failures: number;
+  promptTokens: number;
+  completionTokens: number;
+  activeCustomers: number;
+}
+
+export interface AdminCustomer {
+  id: string;
+  email: string;
+  name: string;
+  createdAt: string;
+  lastActive: string;
+  hasMaster: boolean;
+  roles: number;
+  analyzed: number;
+  resumesTailored: number;
+  coverLetters: number;
+  interviewPreps: number;
+  applied: number;
+  resumeFiles: number;
+  ai: {
+    runs: number;
+    lifetimeRuns: number;
+    requests: number;
+    failures: number;
+    promptTokens: number;
+    completionTokens: number;
+    tokens: number;
+    estimatedShare: number;
+    activeDays: number;
+    avgTokensPerActiveDay: number;
+    rangeTokens: number;
+    rangeRequests: number;
+  };
+}
+
+export interface AdminOverview {
+  generatedAt: string;
+  days: number;
+  summary: {
+    customers: number;
+    newCustomers: number;
+    active7d: number;
+    roles: number;
+    resumesTailored: number;
+    coverLetters: number;
+    interviewPreps: number;
+    rangeRequests: number;
+    rangeTokens: number;
+    avgRequestsPerDay: number;
+    avgTokensPerDay: number;
+    avgTokensPerRequest: number;
+    estimatedShare: number;
+  };
+  daily: AdminDailyRow[];
+  customers: AdminCustomer[];
+}

@@ -19,6 +19,7 @@ import { SignupPage } from './pages/Signup';
 import { HomePage } from './pages/Home';
 import { AuthLinkPage } from './pages/AuthLink';
 import { NotFoundPage } from './pages/NotFound';
+import { AdminPage } from './pages/Admin';
 import { auth, type AuthUser } from './lib/auth';
 import { AuthContext } from './lib/useAuth';
 
@@ -66,6 +67,7 @@ const router = createBrowserRouter([
       { path: '/resumes', element: <Resumes /> },
       { path: '/settings', element: <SettingsPage /> },
       { path: '/help/api-keys', element: <KeyHelpPage /> },
+      { path: '/admin', element: <AdminPage /> },
     ],
   },
     ],

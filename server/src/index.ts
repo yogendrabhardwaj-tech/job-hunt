@@ -8,6 +8,7 @@ import { currentUserId } from './context.ts';
 import { fileToText, guessPostingId } from './extract.ts';
 import * as providers from './llm/providers.ts';
 import { mountAuth, requireUser } from './auth.ts';
+import { mountAdmin } from './admin.ts';
 import { listModels, testProvider } from './llm/openai.ts';
 import * as wf from './workflows.ts';
 import { JOB_STATUSES, type Job, type JobStatus } from './types.ts';
@@ -17,6 +18,7 @@ app.use(express.json({ limit: '5mb' }));
 // Sign-in routes are public; everything else under /api needs a signed-in user and runs as that user.
 mountAuth(app);
 app.use('/api', (req, res, next) => (req.path === '/session/end' ? next() : requireUser(req, res, next)));
+mountAdmin(app);
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
