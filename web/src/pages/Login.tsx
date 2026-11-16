@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { randomMotivation } from '../lib/motivation';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { auth, nextPath } from '../lib/auth';
+import { auth, nextPath, useSkipIfSignedIn } from '../lib/auth';
 import { AuthShell, CodeStep, FormError } from '../components/AuthShell';
 import { Button, inputCls } from '../components/ui';
 
@@ -13,15 +14,32 @@ export function LoginPage() {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const noAccount = /no account/i.test(err);
+  const checking = useSkipIfSignedIn(loc.search);
+  const [motivation] = useState(randomMotivation); // one line per visit; stays put while typing
 
   const send = async () => {
     const r = await auth.start(email, 'login');
     setSentTo(r.email);
   };
 
+  if (checking) return null; // already signed in: on the way to the app
+
   return (
     <AuthShell
       title={sentTo ? 'Check your email' : 'Sign in'}
+      above={
+        <p
+          className="font-accent text-[clamp(24px,3.6vw,32px)] leading-tight italic"
+          style={{
+            background: 'linear-gradient(100deg, var(--jha-pale) 10%, var(--jha-acc-light) 50%, var(--jha-sec-light) 90%)',
+            WebkitBackgroundClip: 'text',
+            backgroundClip: 'text',
+            color: 'transparent',
+          }}
+        >
+          {motivation}
+        </p>
+      }
       sub={sentTo ? undefined : 'Enter your email and we’ll send you a sign-in link and code. No password needed.'}
       footer={
         <>
