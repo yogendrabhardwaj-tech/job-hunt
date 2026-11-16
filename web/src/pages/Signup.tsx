@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { FileText, Link2, Upload, X } from 'lucide-react';
-import { auth, type SignupProfile } from '../lib/auth';
+import { auth, useSkipIfSignedIn, type SignupProfile } from '../lib/auth';
 import { api } from '../lib/api';
 import { AuthShell, CodeStep, FormError } from '../components/AuthShell';
 import { Button, inputCls } from '../components/ui';
@@ -20,6 +20,7 @@ export function SignupPage() {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const checking = useSkipIfSignedIn(loc.search);
   const set = (k: keyof SignupProfile) => (e: React.ChangeEvent<HTMLInputElement>) => setP((x) => ({ ...x, [k]: e.target.value }));
 
   const send = async () => {
@@ -27,6 +28,8 @@ export function SignupPage() {
     const r = await auth.start(email, 'signup', { ...p, name: `${first.trim()} ${last.trim()}`.trim() });
     setSentTo(r.email);
   };
+
+  if (checking) return null; // already signed in: on the way to the app
 
   if (sentTo)
     return (

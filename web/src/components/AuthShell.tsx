@@ -5,7 +5,20 @@ import { Button, inputCls } from './ui';
 import { BrandMark, ThemeSwitcher } from './ThemeSwitcher';
 
 /** Centered card used by the sign-in and sign-up pages, on the same night background as the home page. */
-export function AuthShell({ title, sub, children, footer }: { title: string; sub?: ReactNode; children: ReactNode; footer?: ReactNode }) {
+export function AuthShell({
+  title,
+  sub,
+  children,
+  footer,
+  above,
+}: {
+  title: string;
+  sub?: ReactNode;
+  children: ReactNode;
+  footer?: ReactNode;
+  /** Shown over the card, e.g. a line of encouragement. */
+  above?: ReactNode;
+}) {
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-night text-[#c4cbe0] antialiased">
       <div aria-hidden className="jha-grid pointer-events-none absolute inset-0" />
@@ -30,6 +43,7 @@ export function AuthShell({ title, sub, children, footer }: { title: string; sub
 
       <main className="relative flex flex-1 items-start justify-center px-4 pt-6 pb-16 sm:items-center sm:pt-0">
         <div className="w-full max-w-[460px]">
+          {above && <div className="mb-6 text-center">{above}</div>}
           <div className="rounded-[20px] p-px shadow-[0_40px_100px_-30px_rgba(0,0,0,0.9)]" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.35), rgba(255,255,255,0.08))' }}>
             <div className="rounded-[19px] bg-white p-6 text-slate-800 sm:p-8">
               <h1 className="font-display text-[26px] font-semibold tracking-[-0.03em] text-slate-900">{title}</h1>

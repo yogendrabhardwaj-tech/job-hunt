@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { sessionId } from './session';
 
 export interface AuthUser {
@@ -36,4 +37,27 @@ export const auth = {
 export function nextPath(search: string) {
   const n = new URLSearchParams(search).get('next') ?? '/';
   return n.startsWith('/') && !n.startsWith('//') && !n.startsWith('/login') && !n.startsWith('/signup') ? n : '/';
+}
+
+/**
+ * On the sign-in and sign-up pages: if the visitor still has a valid session, skip the form and go straight
+ * to the app (or the page they were heading to). Returns true while the check runs, so the form doesn't flash.
+ */
+export function useSkipIfSignedIn(search: string) {
+  const [checking, setChecking] = useState(true);
+  useEffect(() => {
+    let live = true;
+    auth
+      .me()
+      .then((user) => {
+        if (!live) return;
+        if (user) location.replace(nextPath(search)); // replace: Back shouldn't return to the sign-in form
+        else setChecking(false);
+      })
+      .catch(() => live && setChecking(false)); // can't tell: show the form
+    return () => {
+      live = false;
+    };
+  }, [search]);
+  return checking;
 }
