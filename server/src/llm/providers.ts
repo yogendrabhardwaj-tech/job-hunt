@@ -190,7 +190,9 @@ const INCLUDED: Included[] = [
     id: 'included-nara',
     kind: 'nararouter',
     name: 'NaraRouter (included)',
-    key: env('NARAROUTER_API_KEY'),
+    // Off unless the owner opts in: NaraRouter publishes no data policy, so the consent screen can only say
+    // "unknown" about it (decision D2 in issue #17).
+    key: env('NARAROUTER_INCLUDED') === '1' ? env('NARAROUTER_API_KEY') : '',
     // a combo (combo/<name>) set up in the app owner's NaraRouter dashboard, or a single model alias
     model: env('NARAROUTER_MODEL'),
     dailyLimit: Number(env('NARAROUTER_DAILY_RUNS') || 0),
@@ -217,6 +219,8 @@ for (const i of INCLUDED) {
       `whitespace inside: ${/\s/.test(k)}, quotes: ${/["']/.test(k)}, "=" inside: ${k.includes('=')}, "Bearer": ${/bearer/i.test(k)}`,
   );
 }
+if (env('NARAROUTER_API_KEY') && env('NARAROUTER_INCLUDED') !== '1')
+  console.warn('[providers] NARAROUTER_API_KEY is set but the included NaraRouter source is off: set NARAROUTER_INCLUDED=1 to offer it (it has no published data policy)');
 if (env('NARAROUTER_API_KEY') && !env('NARAROUTER_MODEL'))
   console.warn('[providers] NARAROUTER_API_KEY is set but NARAROUTER_MODEL is not: set it to a combo such as combo/free-pack');
 
@@ -469,6 +473,9 @@ export function setStrategy(s: Strategy) {
   S().strategy = s;
   persist();
 }
+
+/** The signed-in user's sources, in routing order. */
+export const listProviders = (): ProviderConfig[] => [...S().providers];
 
 export function getProvider(id: string) {
   return S().providers.find((p) => p.id === id);

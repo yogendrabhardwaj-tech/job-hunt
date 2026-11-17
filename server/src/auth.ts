@@ -10,6 +10,8 @@ import * as providers from './llm/providers.ts';
 import { runAs, userKey, type UserCtx } from './context.ts';
 import type { DB } from './types.ts';
 import { codeEmail } from './emails.ts';
+import * as consent from './privacy/consent.ts';
+import { PRIVACY_VERSION, SIGNUP_PAGE_VERSION } from './privacy/versions.ts';
 
 /**
  * Passwordless sign-in: the user enters their email, gets a 6-digit code by email, and enters it.
@@ -179,7 +181,7 @@ export async function attachExistingData(rawEmail: string) {
  * in a real email). APP_URL if set; on Vercel, the address of the deployment that sent the email (production
  * domain in production, the branch address on previews); locally, the dev server.
  */
-function appUrl(): string | undefined {
+export function appUrl(): string | undefined {
   const e = process.env;
   if (e.APP_URL) return e.APP_URL.replace(/\/+$/, '');
   if (!e.VERCEL) return 'http://localhost:5173';
@@ -191,7 +193,14 @@ async function sendCode(email: string, code: string, purpose: 'login' | 'signup'
   const base = appUrl();
   const link = base ? `${base}/auth/link?t=${encodeURIComponent(linkToken)}` : undefined;
   const { subject, text, html } = codeEmail({ code, purpose, to: email, appUrl: base, link });
+  await sendMail(email, subject, text, html, `${purpose} code for ${email}: ${code}${link ? `\n  [auth] link: ${link}` : ''}`);
+}
 
+/**
+ * Sends one transactional email: SMTP when SMTP_PASS is set, else Resend, else (locally only) the server log.
+ * `devLog` is what to print instead when no email service is configured on a local server.
+ */
+export async function sendMail(email: string, subject: string, text: string, html: string, devLog?: string) {
   // 1) SMTP (e.g. Brevo's relay) when a password is configured
   if (process.env.SMTP_PASS) return sendSmtp(email, subject, text, html);
 
@@ -200,7 +209,7 @@ async function sendCode(email: string, code: string, purpose: 'login' | 'signup'
   if (!key) {
     if (process.env.VERCEL) throw new Error('Email sending is not configured on this server');
     // local development without an email service: show the code in the server log
-    console.log(`\n  [auth] ${purpose} code for ${email}: ${code}${link ? `\n  [auth] link: ${link}` : ''}  (set SMTP_PASS to send real emails)\n`);
+    console.log(`\n  [auth] ${devLog ?? `email to ${email}: ${subject}`}  (set SMTP_PASS to send real emails)\n`);
     return;
   }
   const res = await fetch('https://api.resend.com/emails', {
@@ -270,6 +279,8 @@ export async function checkSmtp(testTo?: string) {
 // ---------------------------------------------------------------- rate limits (per server instance)
 
 const hits = new Map<string, number[]>();
+/** True when `key` has been used more than `max` times in the last `windowMs` (counts this call). */
+export const rateLimited = (key: string, max: number, windowMs: number) => limited(key, max, windowMs);
 function limited(key: string, max: number, windowMs: number) {
   const t = Date.now();
   const list = (hits.get(key) ?? []).filter((x) => x > t - windowMs);
@@ -301,6 +312,7 @@ interface LinkToken {
   nonce: string;
   exp: number;
   profile?: SignupProfile;
+  ack?: SignupAck;
 }
 
 interface Pending {
@@ -310,6 +322,24 @@ interface Pending {
   hash: string;
   exp: number;
   profile?: SignupProfile;
+  ack?: SignupAck;
+}
+
+/**
+ * The Privacy Policy acknowledgment from the sign-up form (issue #25). It travels inside the signed cookie and link,
+ * like the profile, and becomes a record only when the account is actually created.
+ */
+interface SignupAck {
+  v: string;
+  at: string;
+  lang: string;
+  copySentAt?: string;
+}
+
+function cleanAck(input: any): SignupAck | undefined {
+  if (input?.acknowledged !== true || input?.version !== PRIVACY_VERSION || input?.ageConfirmed !== true) return;
+  const copy = typeof input.copySentAt === 'string' && !Number.isNaN(Date.parse(input.copySentAt)) ? new Date(input.copySentAt).toISOString() : undefined;
+  return { v: PRIVACY_VERSION, at: new Date().toISOString(), lang: String(input.language || 'en').slice(0, 16), ...(copy ? { copySentAt: copy } : {}) };
 }
 
 /** What the sign-up form collects (all optional apart from the email). */
@@ -357,7 +387,7 @@ export async function requireUser(req: Request, res: Response, next: NextFunctio
 }
 
 /** Signs in (creating the account on sign-up) once a code or link has been checked. */
-async function completeSignIn(req: Request, res: Response, p: { email: string; profile?: SignupProfile }) {
+async function completeSignIn(req: Request, res: Response, p: { email: string; profile?: SignupProfile; ack?: SignupAck }) {
   let user = await findUserFresh(p.email);
   let isNew = false;
   if (!user) {
@@ -373,6 +403,18 @@ async function completeSignIn(req: Request, res: Response, p: { email: string; p
       const patch: Record<string, string> = { email: cur.email || u.email };
       for (const [k, v] of Object.entries(p.profile ?? {})) if (!(cur as any)[k]) patch[k] = v;
       store.updateProfile(patch);
+      if (p.ack)
+        consent.record({
+          type: 'privacy_policy_acknowledgment',
+          action: 'acknowledged',
+          at: p.ack.at,
+          language: p.ack.lang,
+          via: 'signup',
+          signupPageVersion: SIGNUP_PAGE_VERSION,
+          ageConfirmed: true,
+          policyCopyRequested: !!p.ack.copySentAt,
+          ...(p.ack.copySentAt ? { policyCopySentAt: p.ack.copySentAt } : {}),
+        });
     });
   clearCookie(req, res, PENDING_COOKIE);
   setCookie(req, res, SESSION_COOKIE, sign({ uid: u.id, email: u.email, exp: Date.now() + SESSION_TTL_MS } satisfies Session), SESSION_TTL_MS);
@@ -395,6 +437,13 @@ export function mountAuth(app: Express) {
       if (mode === 'login' && !exists) return fail(res, 404, 'There’s no account with that email yet. Sign up first.');
       if (mode === 'signup' && known) return fail(res, 409, 'You already have an account with that email. Sign in instead.');
       const profile = mode === 'signup' ? cleanProfile(req.body?.profile) : undefined;
+      const ack = mode === 'signup' ? cleanAck(req.body?.privacyAck) : undefined;
+      if (mode === 'signup' && !ack)
+        return void res.status(400).json({
+          error: 'Please review and accept the Privacy Policy to create an account.',
+          code: 'PRIVACY_POLICY_ACKNOWLEDGMENT_REQUIRED',
+          field: 'privacy_policy_acknowledged',
+        });
 
       const ip = req.get('x-forwarded-for')?.split(',')[0].trim() || req.socket.remoteAddress || '';
       if (limited(`email:${email}`, 5, 15 * 60_000) || limited(`ip:${ip}`, 20, 15 * 60_000))
@@ -403,8 +452,8 @@ export function mountAuth(app: Express) {
       const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
       const nonce = nanoid(16);
       const exp = Date.now() + CODE_TTL_MS;
-      const pending: Pending = { email, mode, nonce, hash: hmac(`${nonce}:${code}`), exp, profile };
-      const link: LinkToken = { k: 'link', email, mode, nonce, exp: Date.now() + LINK_TTL_MS, profile };
+      const pending: Pending = { email, mode, nonce, hash: hmac(`${nonce}:${code}`), exp, profile, ack };
+      const link: LinkToken = { k: 'link', email, mode, nonce, exp: Date.now() + LINK_TTL_MS, profile, ack };
       await sendCode(email, code, mode, sign(link));
       setCookie(req, res, PENDING_COOKIE, sign(pending), CODE_TTL_MS);
       res.json({ ok: true, email });
@@ -464,7 +513,11 @@ export function mountAuth(app: Express) {
   app.get('/api/auth/me', async (req, res) => {
     try {
       const u = await sessionUser(req);
-      u ? res.json({ user: { id: u.userId, email: u.email, isAdmin: isAdmin(u.email) } }) : fail(res, 401, 'Not signed in');
+      if (!u) return fail(res, 401, 'Not signed in');
+      // accounts from before the acknowledgment existed, or after the policy changed, must acknowledge it (issue #25)
+      let ack = consent.privacyAck(u.userId);
+      if (ack.required && (await consent.refresh(u.userId))) ack = consent.privacyAck(u.userId);
+      res.json({ user: { id: u.userId, email: u.email, isAdmin: isAdmin(u.email), privacyAckRequired: ack.required } });
     } catch (e: any) {
       fail(res, 500, e.message);
     }

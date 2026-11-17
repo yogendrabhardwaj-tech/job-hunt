@@ -12,13 +12,18 @@ import { mountAdmin } from './admin.ts';
 import { listModels, testProvider } from './llm/openai.ts';
 import * as wf from './workflows.ts';
 import { JOB_STATUSES, type Job, type JobStatus } from './types.ts';
+import * as consent from './privacy/consent.ts';
+import { policyOf } from './privacy/policies.ts';
+import { mountPrivacy, mountPublicPrivacy } from './privacy/routes.ts';
 
 const app = express();
 app.use(express.json({ limit: '5mb' }));
 // Sign-in routes are public; everything else under /api needs a signed-in user and runs as that user.
 mountAuth(app);
+mountPublicPrivacy(app);
 app.use('/api', (req, res, next) => (req.path === '/session/end' ? next() : requireUser(req, res, next)));
 mountAdmin(app);
+mountPrivacy(app);
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
@@ -28,10 +33,15 @@ const wrap =
     try {
       await fn(req, res);
     } catch (e: any) {
+      // the web app answers this one by showing the consent dialog, then retrying
+      if (e instanceof consent.ConsentRequiredError) return void res.status(403).json(e.body());
       res.status(400).json({ error: e.message });
     }
   };
 const param = (req: Request, k: string) => String(req.params[k]);
+
+/** Refuses a request that would start an AI run the user hasn't agreed to, before anything is created (issue #20). */
+const needsConsent = (feature: consent.Feature | null) => consent.requireActiveFresh(currentUserId(), feature);
 
 // ---------------------------------------------------------------- live events (SSE)
 
@@ -75,41 +85,55 @@ app.post('/api/session/end', express.text({ type: '*/*' }), (req, res) => {
   res.status(204).end();
 });
 
-app.get('/api/settings', (_req, res) => res.json(providers.publicSettings()));
+/** Adds, per source, whether the user's consent covers it and the short data-policy facts the page shows. */
+function settingsView() {
+  const s = providers.publicSettings();
+  const status = consent.aiStatus(currentUserId());
+  return {
+    ...s,
+    consentState: status.state,
+    providers: s.providers.map((p) => {
+      const policy = policyOf(p);
+      return { ...p, consentCovered: status.state === 'active' && consent.covers(status.sources, p), dataPolicy: { training: policy.training, thirdParty: policy.thirdParty } };
+    }),
+  };
+}
+
+app.get('/api/settings', (_req, res) => res.json(settingsView()));
 app.put(
   '/api/settings',
   wrap((req, res) => {
     if (req.body?.strategy) providers.setStrategy(req.body.strategy);
     if (Array.isArray(req.body?.order)) providers.reorder(req.body.order.map(String));
-    res.json(providers.publicSettings());
+    res.json(settingsView());
   }),
 );
 app.post(
   '/api/settings/providers',
   wrap((req, res) => {
     providers.addProvider(req.body ?? {}, sid(req));
-    res.json(providers.publicSettings());
+    res.json(settingsView());
   }),
 );
 app.put(
   '/api/settings/providers/:id',
   wrap((req, res) => {
     providers.updateProvider(param(req, 'id'), req.body ?? {}, sid(req));
-    res.json(providers.publicSettings());
+    res.json(settingsView());
   }),
 );
 app.delete(
   '/api/settings/providers/:id/key',
   wrap((req, res) => {
     providers.forgetKey(param(req, 'id'));
-    res.json(providers.publicSettings());
+    res.json(settingsView());
   }),
 );
 app.delete(
   '/api/settings/providers/:id',
   wrap((req, res) => {
     providers.removeProvider(param(req, 'id'));
-    res.json(providers.publicSettings());
+    res.json(settingsView());
   }),
 );
 /** Lists a source's models. Works for unsaved forms too: typed values win, then the stored source's key. */
@@ -135,7 +159,7 @@ app.post(
 
 // ---------------------------------------------------------------- profile & resumes
 
-app.get('/api/profile', (_req, res) => res.json({ profile: store.getProfile(), master: store.readMaster() }));
+app.get('/api/profile', (_req, res) => res.json({ profile: store.getProfile(), master: store.readMaster(), pendingImport: store.pendingImportInfo() }));
 app.put(
   '/api/profile',
   wrap((req, res) => {
@@ -149,12 +173,39 @@ app.post(
   '/api/profile/import',
   upload.single('file'),
   wrap(async (req, res) => {
+    // ai (default): convert with AI · defer: keep the text for later (sign-up) · asis: save it as the master without AI
+    const mode = ['defer', 'asis'].includes(req.body.mode) ? (req.body.mode as 'defer' | 'asis') : 'ai';
     let text = String(req.body.text ?? '');
     if (req.file) {
-      await store.archiveUpload(req.file.originalname, req.file.buffer);
+      // text is extracted here, on our server; the original file never goes to an AI service
       text = await fileToText(req.file.buffer, req.file.originalname);
+      if (text.trim().length < 100) throw new Error('Could not read enough text from that resume. Try a different file, or paste the text.');
+      await store.archiveUpload(req.file.originalname, req.file.buffer);
     }
     if (text.trim().length < 100) throw new Error('Could not read enough text from that resume');
+    if (mode === 'asis') {
+      store.saveMasterAsIs(text);
+      store.clearPendingImport();
+      return void res.json({ saved: 'as-is' });
+    }
+    // kept either way, so declining the consent dialog doesn't lose the upload
+    store.savePendingImport(text);
+    if (mode === 'defer') return void res.json({ pending: true });
+    await needsConsent(null);
+    res.json({ task: wf.startImportResume(text) });
+  }),
+);
+
+/** A resume uploaded but not converted yet: convert it with AI, use it as it is, or drop it. */
+app.post(
+  '/api/profile/import/pending',
+  wrap(async (req, res) => {
+    const text = store.readPendingImport();
+    if (!text) throw new Error('There is no uploaded resume waiting');
+    const mode = String(req.body?.mode);
+    if (mode === 'discard') return void (store.clearPendingImport(), res.json({ ok: true }));
+    if (mode === 'asis') return void (store.saveMasterAsIs(text), store.clearPendingImport(), res.json({ saved: 'as-is' }));
+    await needsConsent(null);
     res.json({ task: wf.startImportResume(text) });
   }),
 );
@@ -212,11 +263,12 @@ app.post(
 
 app.post(
   '/api/jobs',
-  wrap((req, res) => {
+  wrap(async (req, res) => {
     const url = String(req.body.url ?? '').trim();
     const jdText = String(req.body.jdText ?? '').trim();
     if (!url && !jdText) throw new Error('Provide a job URL or paste the description');
     if (url) new URL(url); // validate
+    await needsConsent(null); // adding a role scans it with AI
     const job = store.createJob({ url, jdText });
     wf.startScan(job.id);
     res.json(job);
@@ -250,11 +302,13 @@ app.delete('/api/jobs/:id', (req, res) => {
 
 app.post(
   '/api/jobs/:id/:action',
-  wrap((req, res) => {
+  wrap(async (req, res) => {
     const id = param(req, 'id');
     if (!store.getJob(id)) throw new Error('not found');
     const instr = req.body?.instructions ? String(req.body.instructions) : undefined;
     const action = param(req, 'action');
+    const features: Record<string, consent.Feature | null> = { rescan: null, analyze: 'analyze', tailor: 'tailor', 'cover-letter': 'coverLetter', 'interview-prep': 'interviewPrep' };
+    if (action in features) await needsConsent(features[action]);
     const task =
       action === 'rescan'
         ? (store.updateJob(id, (j) => void (req.body?.jdText ? (j.jdText = String(req.body.jdText)) : null)), wf.startScan(id))
@@ -274,9 +328,14 @@ app.post(
 
 // ---------------------------------------------------------------- agent chat (streams the task's events as SSE)
 
-app.post('/api/chat', (req, res) => {
+app.post('/api/chat', async (req, res) => {
   const { message, sessionId, jobId, page, sourceId } = req.body ?? {};
   if (!message) return void res.status(400).json({ error: 'message required' });
+  try {
+    await needsConsent('copilot');
+  } catch (e: any) {
+    return void res.status(e instanceof consent.ConsentRequiredError ? 403 : 400).json(e instanceof consent.ConsentRequiredError ? e.body() : { error: e.message });
+  }
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
   const { task, promise } = wf.runChat(String(message), { sessionId, jobId, page, sourceId: typeof sourceId === 'string' && sourceId ? sourceId : undefined });
   const send = (o: unknown) => res.write(`data: ${JSON.stringify(o)}\n\n`);

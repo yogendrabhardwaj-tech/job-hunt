@@ -42,7 +42,10 @@ const isPrivate = (key: string) => key.endsWith('settings.json') || key === 'use
  * their owner signs in and claims them.
  */
 const isMirrored = (key: string) =>
-  key === 'users.json' || /^(users\/[\w-]+\/)?(db\.json|settings\.json|usage-log\.json|resumes\/[\w.-]+\.md)$/.test(key);
+  key === 'users.json' ||
+  /^(users\/[\w-]+\/)?(db\.json|settings\.json|usage-log\.json|resumes\/[\w.-]+\.md)$/.test(key) ||
+  // consent and deletion records (one write-once file per event), and a resume waiting for AI consent
+  /^users\/[\w-]+\/((consent|deletions)\/[\w.-]+\.json|pending-import\.txt)$/.test(key);
 
 interface Entry {
   content: string;
@@ -305,6 +308,27 @@ export async function putBinary(key: string, data: Buffer) {
     fs.writeFileSync(path.join(DATA_DIR, key), data);
   }
   else await put(BLOB_PREFIX + key, data, { access: 'private', allowOverwrite: true, addRandomSuffix: false });
+}
+
+/** Deletes every archive-only binary file under a prefix (e.g. a user's original uploads). Returns how many. */
+export async function removeBinaryPrefix(prefix: string): Promise<number> {
+  if (backend === 'fs') {
+    const p = path.join(DATA_DIR, prefix);
+    if (!fs.existsSync(p)) return 0;
+    const n = fs.readdirSync(p, { recursive: true }).length;
+    fs.rmSync(p, { recursive: true, force: true });
+    return n;
+  }
+  let n = 0;
+  let cursor: string | undefined;
+  do {
+    const page = await list({ prefix: BLOB_PREFIX + prefix, cursor, limit: 1000 });
+    const urls = page.blobs.map((b) => b.url);
+    if (urls.length) await del(urls);
+    n += urls.length;
+    cursor = page.hasMore ? page.cursor : undefined;
+  } while (cursor);
+  return n;
 }
 
 // Save anything still pending before the process exits.

@@ -266,3 +266,42 @@ export function tailoredFileName(jobId: string) {
   const parts = [`${base}${/resume/i.test(base) ? '' : '_Resume'}`, jobId, slug(job?.postingId ?? '', '-', 40), slug(job?.company ?? '', '_', 40)];
   return `${parts.filter(Boolean).join('_')}.md`;
 }
+
+// ---------- privacy: pending import and deletion (issues #22, #24) ----------
+
+const PENDING = 'pending-import.txt';
+
+/** Resume text extracted on our server but not yet converted, because AI processing isn't agreed to (yet). */
+export const readPendingImport = () => storage.readText(userKey(PENDING)) ?? '';
+export const savePendingImport = (text: string) => storage.writeText(userKey(PENDING), text);
+export const clearPendingImport = () => storage.remove(userKey(PENDING));
+export function pendingImportInfo() {
+  const f = storage.listFiles(userKey(PENDING))[0];
+  return f ? { chars: f.size, at: f.updatedAt } : null;
+}
+
+/**
+ * Turns extracted text into a master resume without AI: a name heading, then the text as it came out of the file.
+ * Layout problems from the extraction stay; the user can fix them with Edit.
+ */
+export function saveMasterAsIs(text: string) {
+  const name = db().profile.name.trim();
+  const body = text.replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  writeResume(db().profile.masterFile, name && !body.startsWith('#') ? `# ${name}\n\n${body}` : body);
+  updateProfile({});
+}
+
+/**
+ * Deletes the signed-in user's resume data: profile details (the account email stays), every job with its
+ * description, analyses, documents and notes, every resume file and any pending import. Job numbering continues.
+ */
+export function deleteResumeData(): { resumes: number } {
+  const prefix = userKey('resumes/');
+  const files = storage.listFiles(prefix);
+  for (const f of files) storage.remove(f.key);
+  clearPendingImport();
+  const d = db();
+  dbs.set(currentUserId(), { seq: d.seq, profile: { ...emptyProfile(), email: d.profile.email }, jobs: [] });
+  persist();
+  return { resumes: files.length };
+}
