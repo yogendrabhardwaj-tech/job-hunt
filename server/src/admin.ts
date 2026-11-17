@@ -4,6 +4,7 @@ import { currentUser } from './context.ts';
 import { isAdmin, listUsers } from './auth.ts';
 import { readUsageLog, type DayUsage } from './usageLog.ts';
 import type { DB } from './types.ts';
+import * as consent from './privacy/consent.ts';
 
 /**
  * Admin-only overview of every customer: activity counts read from each user's saved data, plus AI usage from
@@ -104,10 +105,19 @@ function overview(days: number) {
       .sort()
       .pop();
 
+    const ai_consent = consent.aiStatus(u.id);
+    const ack = consent.privacyAck(u.id);
     return {
       id: u.id,
       email: u.email,
       name: profile?.name ?? '',
+      consent: {
+        ai: ai_consent.state,
+        aiVersion: ai_consent.current?.consentVersion ?? null,
+        aiAt: ai_consent.current?.at ?? null,
+        privacyAckVersion: ack.last?.privacyVersion ?? null,
+        privacyAckAt: ack.last?.at ?? null,
+      },
       createdAt: u.createdAt,
       lastActive: lastActive ?? u.createdAt,
       hasMaster: resumeFiles.some((f) => f.key.endsWith('/' + (profile?.masterFile ?? 'master_resume.md'))),
@@ -179,5 +189,13 @@ export function mountAdmin(app: Express) {
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
+  });
+
+  /** One customer's consent and acknowledgment history (issue #19). Records hold no resume content. */
+  app.get('/api/admin/users/:id/consent', requireAdmin, async (req, res) => {
+    const id = String(req.params.id);
+    if (!listUsers().some((u) => u.id === id)) return void res.status(404).json({ error: 'No such user' });
+    await consent.refresh(id);
+    res.json({ userId: id, ai: consent.aiStatus(id).state, privacyAckRequired: consent.privacyAck(id).required, history: consent.history(id) });
   });
 }

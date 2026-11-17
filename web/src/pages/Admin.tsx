@@ -342,6 +342,19 @@ function Customers({ rows, range }: { rows?: AdminCustomer[]; range: Range }) {
                     <div className="font-medium text-slate-900">{c.name || '—'}</div>
                     <div className="text-xs break-words text-slate-500">{c.email}</div>
                     {!c.hasMaster && <div className="mt-1 inline-block rounded whitespace-nowrap bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-800 ring-1 ring-inset ring-amber-200">No master resume yet</div>}
+                    {c.consent && (
+                      <div className="mt-1 flex flex-wrap gap-1 text-[11px]">
+                        <span
+                          className={cx('rounded px-1.5 py-0.5 ring-1 ring-inset', c.consent.ai === 'active' ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : 'bg-slate-50 text-slate-700 ring-slate-200')}
+                          title={c.consent.aiAt ? `Since ${new Date(c.consent.aiAt).toLocaleString()}` : undefined}
+                        >
+                          AI consent: {c.consent.ai === 'active' ? `on (v${c.consent.aiVersion})` : c.consent.ai === 'none' ? 'never given' : c.consent.ai}
+                        </span>
+                        <span className="rounded bg-slate-50 px-1.5 py-0.5 text-slate-700 ring-1 ring-inset ring-slate-200">
+                          Policy ack: {c.consent.privacyAckVersion ? `v${c.consent.privacyAckVersion}` : 'none'}
+                        </span>
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-slate-600">{new Date(c.createdAt).toLocaleDateString()}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-slate-600">{timeAgo(c.lastActive)}</td>

@@ -4,6 +4,7 @@ import type { SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk';
 import * as providers from './providers.ts';
 import type { ProviderConfig } from './providers.ts';
 import { estimateTokens } from '../usageLog.ts';
+import { maybeUserId } from '../context.ts';
 
 /** Agent loop for any OpenAI-compatible /chat/completions endpoint (OpenRouter, HF router, Gemini, LM Studio, …). */
 
@@ -110,6 +111,9 @@ export async function complete(
         stream: true,
         // LM Studio / OpenRouter only report token usage on streams when asked
         ...(p.kind === 'lmstudio' || p.kind === 'openrouter' ? { stream_options: { include_usage: true } } : {}),
+        // Only model hosts that don't keep or train on prompts; the request fails (and fails over) if none qualify.
+        // The consent screen and Privacy Policy rely on this (privacy/policies.ts).
+        ...(p.kind === 'openrouter' ? { provider: { data_collection: 'deny' } } : {}),
         ...body,
         ...(body.tools?.length ? { tool_choice: 'auto' } : {}),
         // OpenAI's current models reject max_tokens in favour of max_completion_tokens
@@ -237,6 +241,8 @@ export interface LoopOptions {
   mustCall?: string;
   onText: (t: string) => void;
   onTool: (name: string, input: any) => void;
+  /** Runs before every request to the model; throwing stops the run (consent withdrawn, task cancelled). */
+  beforeRequest?: () => void | Promise<void>;
 }
 
 export function newState(system: string, history: ChatMsg[], prompt: string): LoopState {
@@ -253,6 +259,7 @@ export async function runLoop(p: ProviderConfig, state: LoopState, o: LoopOption
   let nudges = 0;
 
   while (state.turns < o.maxTurns) {
+    await o.beforeRequest?.();
     state.turns++;
     const { message, finish } = await complete(p, { messages: state.messages, tools: specs }, o.onText);
     let calls = message.tool_calls ?? [];
@@ -317,16 +324,26 @@ export async function runLoop(p: ProviderConfig, state: LoopState, o: LoopOption
 
 // ---------------------------------------------------------------- chat sessions (Claude keeps its own; these are ours)
 
-const sessions = new Map<string, ChatMsg[]>();
+// Kept per user: a session id only works for the user whose chat it is.
+const sessions = new Map<string, { userId?: string; messages: ChatMsg[] }>();
+const own = (id?: string) => {
+  const s = id ? sessions.get(id) : undefined;
+  return s && s.userId === maybeUserId() ? s : undefined;
+};
 
-export const hasSession = (id?: string) => !!id && sessions.has(id);
-export const getSession = (id: string) => sessions.get(id) ?? [];
+export const hasSession = (id?: string) => !!own(id);
+export const getSession = (id: string) => own(id)?.messages ?? [];
 
 export function saveSession(id: string | undefined, state: LoopState): string {
-  const sid = id && sessions.has(id) ? id : `oa_${nanoid(12)}`;
-  sessions.set(sid, state.messages.slice(1)); // drop system; it's rebuilt per turn
+  const sid = id && own(id) ? id : `oa_${nanoid(12)}`;
+  sessions.set(sid, { userId: maybeUserId(), messages: state.messages.slice(1) }); // drop system; it's rebuilt per turn
   if (sessions.size > 40) sessions.delete(sessions.keys().next().value!);
   return sid;
+}
+
+/** Forgets every copilot conversation a user has on this server instance (their data is being deleted). */
+export function dropUserSessions(userId: string) {
+  for (const [id, s] of sessions) if (s.userId === userId) sessions.delete(id);
 }
 
 // ---------------------------------------------------------------- settings-page helpers

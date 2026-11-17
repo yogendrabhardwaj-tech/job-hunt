@@ -6,6 +6,17 @@ export interface AuthUser {
   email: string;
   /** Set for accounts listed in the server's ADMIN_EMAILS. */
   isAdmin?: boolean;
+  /** The account hasn't acknowledged the current Privacy Policy yet. */
+  privacyAckRequired?: boolean;
+}
+
+/** What the sign-up form's Privacy Policy section sends (issue #25). */
+export interface SignupPrivacyAck {
+  version: string;
+  acknowledged: true;
+  ageConfirmed: true;
+  language: string;
+  copySentAt?: string;
 }
 
 export type SignupProfile = Partial<Record<'name' | 'phone' | 'location' | 'headline' | 'linkedinUrl' | 'targetRoles', string>>;
@@ -23,7 +34,8 @@ async function post<T>(url: string, body?: unknown): Promise<T> {
 
 export const auth = {
   /** Emails a 6-digit code. Sign-up also sends the profile details, applied when the account is created. */
-  start: (email: string, mode: 'login' | 'signup', profile?: SignupProfile) => post<{ ok: true; email: string }>('/api/auth/start', { email, mode, profile }),
+  start: (email: string, mode: 'login' | 'signup', profile?: SignupProfile, privacyAck?: SignupPrivacyAck) =>
+    post<{ ok: true; email: string }>('/api/auth/start', { email, mode, profile, privacyAck }),
   /** Signs in with the one-click link from the email. */
   link: (t: string) => post<{ user: AuthUser; isNew: boolean }>('/api/auth/link', { t }),
   verify: (code: string) => post<{ user: AuthUser; isNew: boolean }>('/api/auth/verify', { code }),

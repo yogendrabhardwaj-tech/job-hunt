@@ -116,6 +116,8 @@ export interface DB {
   seq: number;
   profile: Profile;
   jobs: Job[];
+  /** Changes whenever a consent record is written, so other server instances notice and re-read them. */
+  consentRev?: string;
 }
 
 export type TaskKind =

@@ -4,6 +4,8 @@ import * as store from './store.ts';
 import { emit } from './tasks.ts';
 import { keywordCoverage } from './keywords.ts';
 import { JOB_STATUSES, type Analysis, type Job } from './types.ts';
+import { currentUserId } from './context.ts';
+import * as consent from './privacy/consent.ts';
 
 const ok = (data: unknown) => ({
   content: [{ type: 'text' as const, text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) }],
@@ -298,6 +300,9 @@ export const startWorkflow = tool(
   },
   async ({ jobId, workflow, instructions }) => {
     if (!store.getJob(jobId)) return fail(`No job ${jobId}`);
+    const feature = consent.featureFor(workflow);
+    if (!consent.allows(currentUserId(), feature))
+      return fail(`${feature ? consent.FEATURES[feature].label : 'This workflow'} is turned off in the user's privacy preferences. Tell them they can turn it on on the Privacy page.`);
     const wf = await import('./workflows.ts');
     const t = wf.startWorkflow(jobId, workflow, instructions);
     return ok({ taskId: t.id, message: `${workflow} running in background` });

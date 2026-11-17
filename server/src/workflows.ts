@@ -5,6 +5,11 @@ import { createTask, emit, finishTask, findRunning, pushEvent } from './tasks.ts
 import { fetchPosting, guessPostingId } from './extract.ts';
 import * as T from './tools.ts';
 import type { Task, TaskKind } from './types.ts';
+import { currentUserId } from './context.ts';
+import * as consent from './privacy/consent.ts';
+
+/** Chained runs start only when the user's consent and preferences allow them, instead of failing (issue #20). */
+const mayRun = (feature: consent.Feature | null) => consent.allows(currentUserId(), feature);
 
 const TRUTH = `Truthfulness is non-negotiable: never invent employers, titles, dates, metrics, degrees, certifications or skills.
 You may only use facts present in the master resume, the achievements notes, or the LinkedIn text. Reordering, re-wording with the
@@ -125,7 +130,7 @@ Call save_job_details exactly once with jobId "${jobId}". Strip page chrome (coo
       pushEvent(task, { type: 'status', text: `Possible duplicate of ${dups.map((d) => d.id).join(', ')}` });
     }
     emit({ type: 'job', jobId });
-    if (store.readMaster()) startAnalyze(jobId, 'master');
+    if (store.readMaster() && mayRun('analyze')) startAnalyze(jobId, 'master');
   }
 }
 
@@ -193,8 +198,10 @@ Write the full tailored resume and call save_tailored_resume once with jobId "${
 any keyword you deliberately did NOT add because it is not supported by the candidate's real experience.`,
     });
 
-    pushEvent(task, { type: 'status', text: 'Re-scoring tailored version…' });
-    startAnalyze(jobId, 'tailored');
+    if (mayRun('analyze')) {
+      pushEvent(task, { type: 'status', text: 'Re-scoring tailored version…' });
+      startAnalyze(jobId, 'tailored');
+    }
   });
 }
 
@@ -259,8 +266,9 @@ ${RESUME_FORMAT}`,
       prompt: `<raw_resume>\n${rawText}\n</raw_resume>\n${p.linkedinUrl ? `LinkedIn URL to include in the contact line: ${p.linkedinUrl}\n` : ''}
 Call save_master_resume once with the Markdown and the contact fields you can find.`,
     });
+    store.clearPendingImport();
     // existing analyses are now stale — re-score active applications
-    for (const j of store.listJobs()) if (j.details && !['rejected', 'withdrawn'].includes(j.status)) startAnalyze(j.id, 'master');
+    if (mayRun('analyze')) for (const j of store.listJobs()) if (j.details && !['rejected', 'withdrawn'].includes(j.status)) startAnalyze(j.id, 'master');
   });
 }
 

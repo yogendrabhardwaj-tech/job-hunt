@@ -65,7 +65,29 @@ export function pushEvent(task: Task, e: Omit<AgentEvent, 'at'>) {
   emit({ type: 'task-event', taskId: task.id, event });
 }
 
+/** Why a task was stopped from outside (consent withdrawn, data being deleted). Checked before each model request. */
+const cancelled = new Map<string, string>();
+
+export const cancelReason = (task: Pick<Task, 'id'>) => cancelled.get(task.id);
+
+/** Stops all of a user's running tasks at their next model request or save. */
+export function cancelUserTasks(userId: string, reason: string): number {
+  let n = 0;
+  for (const t of tasks.values())
+    if (t.userId === userId && t.state === 'running') {
+      cancelled.set(t.id, reason);
+      n++;
+    }
+  return n;
+}
+
+/** Forgets a user's task history (used when their data is deleted). Running tasks are cancelled first. */
+export function forgetUserTasks(userId: string) {
+  for (const [id, t] of tasks) if (t.userId === userId && t.state !== 'running') tasks.delete(id);
+}
+
 export function finishTask(task: Task, error?: string) {
+  cancelled.delete(task.id);
   task.state = error ? 'error' : 'done';
   task.error = error;
   task.endedAt = now();

@@ -168,7 +168,7 @@ export const useJobs = () => useLiveQuery<Job[]>(api.jobs, (m) => m.type === 'jo
 export const useJob = (id: string) =>
   useLiveQuery<Job>(() => api.job(id), (m) => (m.type === 'job' && m.jobId === id) || (m.type === 'task' && m.task.jobId === id), [id]);
 export const useProfile = () =>
-  useLiveQuery<{ profile: Profile; master: string }>(api.profile, (m) => m.type === 'profile' || (m.type === 'task' && m.task.kind === 'import-resume'), []);
+  useLiveQuery<{ profile: Profile; master: string; pendingImport?: { chars: number; at: string } | null }>(api.profile, (m) => m.type === 'profile' || (m.type === 'task' && m.task.kind === 'import-resume'), []);
 export const useResume = (file?: string) =>
   useLiveQuery<{ file: string; content: string }>(
     () => (file ? api.resume(file) : Promise.resolve({ file: '', content: '' })),

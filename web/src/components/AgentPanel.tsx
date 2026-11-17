@@ -5,6 +5,7 @@ import { useLive } from '../lib/live';
 import { Md } from './Markdown';
 import { cx } from '../lib/format';
 import { api } from '../lib/api';
+import { isConsentRequired, requestConsent } from '../lib/consent';
 import type { ProviderConfig } from '../lib/types';
 
 interface Msg {
@@ -104,12 +105,22 @@ export function AgentPanel() {
     setMsgs((p) => [...p, { role: 'user', text: message, steps: [] }, { role: 'agent', text: '', steps: [], pending: true }]);
     abort.current = new AbortController();
     try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ message, sessionId, jobId, page: loc.pathname, sourceId: effectiveId || undefined }),
-        signal: abort.current.signal,
-      });
+      const post = () =>
+        fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ message, sessionId, jobId, page: loc.pathname, sourceId: effectiveId || undefined }),
+          signal: abort.current!.signal,
+        });
+      let res = await post();
+      // no AI consent, or the copilot is turned off: ask, then send again once if the user agrees
+      if (res.status === 403) {
+        const data = await res.json().catch(() => ({}));
+        if (!isConsentRequired(data)) throw new Error(data.error || 'Not allowed');
+        if (!(await requestConsent(data))) throw new Error(data.message || 'AI Resume Processing is off.');
+        res = await post();
+        if (res.status === 403) throw new Error((await res.json().catch(() => ({}))).message || 'AI Resume Processing is off.');
+      }
       if (!res.body) throw new Error('No response stream');
       const reader = res.body.getReader();
       const dec = new TextDecoder();

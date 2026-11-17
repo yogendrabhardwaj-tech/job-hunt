@@ -123,3 +123,22 @@ Your AI career agent: match scores, tailored resumes and interview prep.`;
 
   return { subject, html: layout({ preheader: `${code} — ${signup ? 'confirm your email' : 'your sign-in code'}. Expires in 10 minutes.`, body, footer }), text };
 }
+
+/**
+ * The Privacy Policy copy requested from the sign-up page. Transactional only: the policy, its version and date,
+ * and where to read it online. No marketing, and nothing from the request apart from the recipient's address.
+ */
+export function policyEmail({ to, title, version, effectiveDate, url, body }: { to: string; title: string; version: string; effectiveDate: string; url: string; body: string }) {
+  const b = BRAND;
+  const subject = `${b.name} Privacy Policy (version ${version})`;
+  const html = layout({
+    preheader: `Version ${version}, effective ${effectiveDate}. The copy you asked for.`,
+    body: `
+<h1 style="margin:0 0 8px;font-size:22px;line-height:1.3;font-weight:600;color:${b.ink};letter-spacing:-0.01em;">${esc(title)}</h1>
+<p style="margin:0 0 20px;font-size:15px;line-height:1.55;color:${b.body};">Version ${esc(version)} &middot; effective ${esc(effectiveDate)}. Here is the copy you asked for. The current version is always at <a href="${esc(url)}" style="color:${b.color};">${esc(url)}</a>.</p>
+<div style="font-size:13.5px;line-height:1.6;color:${b.body};white-space:pre-wrap;border-top:1px solid ${b.line};padding-top:16px;">${esc(body.trim())}</div>`,
+    footer: `Sent to ${esc(to)} because someone asked for a copy of this policy on the ${esc(b.name)} sign-up page. No account was created by this email.`,
+  });
+  const text = [`${title}`, `Version ${version}, effective ${effectiveDate}`, `Current version: ${url}`, '', body.trim(), '', `Sent to ${to} because someone asked for a copy on the ${b.name} sign-up page.`].join('\n');
+  return { subject, text, html };
+}
