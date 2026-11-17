@@ -8,7 +8,7 @@ import * as store from '../src/store.ts';
 import * as storage from '../src/storage.ts';
 import * as providers from '../src/llm/providers.ts';
 import { createTask } from '../src/tasks.ts';
-import { runAgent } from '../src/agent.ts';
+import { CancelledError, runAgent } from '../src/agent.ts';
 import * as consent from '../src/privacy/consent.ts';
 import type { TaskKind } from '../src/types.ts';
 
@@ -151,6 +151,27 @@ describe('consent gate (issue #20)', () => {
       const before = fake.bodies.length;
       const task = createTask('tailor', 'test');
       await expect(runAgent({ task, system: 's', prompt: 'p', tools: [peek, save] })).rejects.toBeInstanceOf(consent.ConsentRequiredError);
+      expect(fake.bodies.length).toBe(before + 1);
+    });
+  });
+
+  it('saves nothing and stops once the user deletes their data mid-run', async () => {
+    await asNewUser(async () => {
+      grant();
+      const saved: unknown[] = [];
+      const save = tool('save', 'Save', { markdown: z.string() }, async (a) => {
+        saved.push(a);
+        return { content: [{ type: 'text' as const, text: 'saved' }] };
+      });
+      const task = createTask('tailor', 'test');
+      // the deletion lands (e.g. on another server instance) while the model is still answering
+      fake.replies.push(() => {
+        storage.writeText(`users/user${n}/deletions/now.json`, JSON.stringify({ startedAt: new Date().toISOString(), status: 'completed' }));
+        return callTool('save', { markdown: 'x' })();
+      });
+      const before = fake.bodies.length;
+      await expect(runAgent({ task, system: 's', prompt: 'p', tools: [save, tool('noop', 'n', {}, async () => ({ content: [] }))] })).rejects.toBeInstanceOf(CancelledError);
+      expect(saved).toEqual([]);
       expect(fake.bodies.length).toBe(before + 1);
     });
   });

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, FileUp, Link2 as Linkedin, Pencil, Printer, Sparkles, Trophy, Upload } from 'lucide-react';
 import { useLive, useProfile } from '../lib/live';
 import { api } from '../lib/api';
+import { ConsentDeclinedError } from '../lib/consent';
 import { PageHeader } from '../components/Layout';
 import { ResumeView } from '../components/Markdown';
 import { TaskLog } from '../components/TaskLog';
@@ -54,8 +55,24 @@ export function ProfilePage() {
       setPasteOpen(false);
       setPaste('');
     } catch (e: any) {
-      setErr(e.message);
+      // declined the consent dialog: the text is kept, and the banner below offers the other choices
+      if (e instanceof ConsentDeclinedError) (setPasteOpen(false), setPaste(''));
+      else setErr(e.message);
     }
+    reload();
+  };
+
+  const [pendingBusy, setPendingBusy] = useState<'' | 'ai' | 'asis' | 'discard'>('');
+  const resolvePending = async (mode: 'ai' | 'asis' | 'discard') => {
+    setErr('');
+    setPendingBusy(mode);
+    try {
+      await api.pendingImport(mode);
+    } catch (e: any) {
+      if (!(e instanceof ConsentDeclinedError)) setErr(e.message);
+    }
+    setPendingBusy('');
+    reload();
   };
 
   const uploadLinkedin = async (file: File) => {
@@ -238,6 +255,25 @@ export function ProfilePage() {
               </div>
             </div>
             {err && <p className="mt-2 text-sm text-rose-600">{err}</p>}
+            {data?.pendingImport && !importing && (
+              <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-950 ring-1 ring-inset ring-amber-200" role="status">
+                <p>
+                  <strong className="font-semibold">Your uploaded resume is saved but not converted yet.</strong> Converting turns it into the app’s clean resume format using an AI service, which needs your
+                  agreement first. You can also use the text as it is and fix the layout yourself with Edit.
+                </p>
+                <div className="mt-2.5 flex flex-wrap gap-2">
+                  <Button size="sm" variant="ai" loading={pendingBusy === 'ai'} onClick={() => resolvePending('ai')}>
+                    Convert with AI
+                  </Button>
+                  <Button size="sm" loading={pendingBusy === 'asis'} onClick={() => resolvePending('asis')}>
+                    Use as-is without AI
+                  </Button>
+                  <Button size="sm" variant="ghost" loading={pendingBusy === 'discard'} onClick={() => resolvePending('discard')}>
+                    Discard
+                  </Button>
+                </div>
+              </div>
+            )}
             {pasteOpen && (
               <div className="mt-3">
                 <textarea value={paste} onChange={(e) => setPaste(e.target.value)} rows={8} placeholder="Paste your resume text…" className={inputCls} />

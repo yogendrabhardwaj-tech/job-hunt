@@ -242,7 +242,7 @@ export interface LoopOptions {
   onText: (t: string) => void;
   onTool: (name: string, input: any) => void;
   /** Runs before every request to the model; throwing stops the run (consent withdrawn, task cancelled). */
-  beforeRequest?: () => void;
+  beforeRequest?: () => void | Promise<void>;
 }
 
 export function newState(system: string, history: ChatMsg[], prompt: string): LoopState {
@@ -259,7 +259,7 @@ export async function runLoop(p: ProviderConfig, state: LoopState, o: LoopOption
   let nudges = 0;
 
   while (state.turns < o.maxTurns) {
-    o.beforeRequest?.();
+    await o.beforeRequest?.();
     state.turns++;
     const { message, finish } = await complete(p, { messages: state.messages, tools: specs }, o.onText);
     let calls = message.tool_calls ?? [];

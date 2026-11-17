@@ -1,10 +1,14 @@
 import { useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { FileText, Link2, Upload, X } from 'lucide-react';
+import { AlertTriangle, FileText, Link2, Mail, Upload, X } from 'lucide-react';
 import { auth, useSkipIfSignedIn, type SignupProfile } from '../lib/auth';
 import { api } from '../lib/api';
+import { cx } from '../lib/format';
 import { AuthShell, CodeStep, FormError } from '../components/AuthShell';
 import { Button, inputCls } from '../components/ui';
+import { PolicyModal, usePolicy } from './PrivacyPolicy';
+
+const validEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
 
 const MAX_FILE = 15 * 1024 * 1024;
 
@@ -22,11 +26,44 @@ export function SignupPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const checking = useSkipIfSignedIn(loc.search);
   const set = (k: keyof SignupProfile) => (e: React.ChangeEvent<HTMLInputElement>) => setP((x) => ({ ...x, [k]: e.target.value }));
+  // Privacy Policy section (issue #25)
+  const { doc: policy, err: policyErr } = usePolicy();
+  const [ack, setAck] = useState(false);
+  const [adult, setAdult] = useState(false);
+  const [ackErr, setAckErr] = useState('');
+  const [viewPolicy, setViewPolicy] = useState(false);
+  const [copy, setCopy] = useState<{ state: 'idle' | 'sending' | 'sent' | 'error'; msg: string; sentAt?: string }>({ state: 'idle', msg: '' });
+  const ackRef = useRef<HTMLInputElement>(null);
+  const adultRef = useRef<HTMLInputElement>(null);
 
   const send = async () => {
     // the profile keeps one name field, used on resumes and in greetings
-    const r = await auth.start(email, 'signup', { ...p, name: `${first.trim()} ${last.trim()}`.trim() });
+    const r = await auth.start(
+      email,
+      'signup',
+      { ...p, name: `${first.trim()} ${last.trim()}`.trim() },
+      { version: policy!.version, acknowledged: true, ageConfirmed: true, language: navigator.language || 'en', ...(copy.sentAt ? { copySentAt: copy.sentAt } : {}) },
+    );
     setSentTo(r.email);
+  };
+
+  const emailCopy = async () => {
+    if (!validEmail(email)) return setCopy({ state: 'error', msg: 'Please enter a valid email address to receive a copy of the Privacy Policy.' });
+    setCopy({ state: 'sending', msg: '' });
+    try {
+      const r = await api.emailPolicyCopy(email);
+      setCopy({ state: 'sent', msg: r.message, sentAt: r.sentAt });
+    } catch (e: any) {
+      setCopy({ state: 'error', msg: e.message || 'We could not send the Privacy Policy. Please try again.' });
+    }
+  };
+
+  /** The acknowledgment checks run first, so the message points at the box that needs ticking. */
+  const ackProblem = () => {
+    if (!policy) return { msg: policyErr || 'Privacy Policy is temporarily unavailable. Please try again later.', ref: null };
+    if (!ack) return { msg: 'Please accept the Privacy Policy to continue.', ref: ackRef };
+    if (!adult) return { msg: 'Please confirm that you are 18 or older.', ref: adultRef };
+    return null;
   };
 
   if (checking) return null; // already signed in: on the way to the app
@@ -40,9 +77,11 @@ export function SignupPage() {
           onVerify={async (code) => {
             await auth.verify(code);
             if (resume) {
-              // signed in now, so the existing import runs for the new account; progress shows on the Profile page
+              // signed in now. The file is stored and its text extracted on our server, but nothing goes to an AI
+              // service until the user agrees on the Profile page (or chooses to use it as it is).
               const fd = new FormData();
               fd.append('file', resume);
+              fd.append('mode', 'defer');
               await api.importResume(fd).catch(() => {});
               location.assign('/profile');
             } else location.assign('/');
@@ -69,6 +108,12 @@ export function SignupPage() {
       <form
         onSubmit={async (e) => {
           e.preventDefault();
+          const problem = ackProblem();
+          if (problem) {
+            setAckErr(problem.msg);
+            problem.ref?.current?.focus();
+            return;
+          }
           setBusy(true);
           setErr('');
           try {
@@ -136,7 +181,7 @@ export function SignupPage() {
               <FileText className="size-5 shrink-0 text-brand-600" />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium text-slate-800">{resume.name}</div>
-                <div className="text-xs text-slate-500">Imported as your master resume after you confirm your email.</div>
+                <div className="text-xs text-slate-500">Saved to your account when you confirm your email. It’s only sent to an AI service after you agree to that.</div>
               </div>
               <button type="button" aria-label="Remove resume" onClick={() => setResume(null)} className="rounded p-1 text-slate-500 hover:bg-slate-100">
                 <X className="size-4" />
@@ -167,11 +212,79 @@ export function SignupPage() {
           />
         </div>
 
-        <Button type="submit" variant="primary" className="w-full" loading={busy}>
-          Email me a sign-in link
+        <section aria-labelledby="privacy-h" className="rounded-xl bg-slate-50 p-4 ring-1 ring-inset ring-slate-200">
+          <h2 id="privacy-h" className="text-sm font-semibold text-slate-900">
+            Privacy Policy
+          </h2>
+          <p className="mt-1 text-[13px] leading-snug text-slate-700">
+            Before creating your account, please review how we collect, use, share and protect your personal information, how long we keep it, and your rights.
+          </p>
+          {policy && (
+            <p className="mt-1 text-xs text-slate-600">
+              Version {policy.version} · effective {policy.effectiveDate}
+            </p>
+          )}
+          {policyErr && <p className="mt-1 text-xs font-medium text-rose-700">{policyErr}</p>}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button type="button" size="sm" onClick={() => setViewPolicy(true)} disabled={!!policyErr}>
+              View Privacy Policy
+            </Button>
+            <Button type="button" size="sm" variant="ghost" icon={<Mail className="size-3.5" />} loading={copy.state === 'sending'} onClick={emailCopy} disabled={!!policyErr}>
+              Email me a copy
+            </Button>
+          </div>
+          <p role="status" aria-live="polite" className={cx('text-[13px]', copy.msg ? 'mt-2' : 'sr-only', copy.state === 'error' ? 'text-rose-700' : 'text-emerald-800')}>
+            {copy.msg}
+          </p>
+
+          <div className="mt-3 space-y-2">
+            <div className="flex items-start gap-2.5">
+              <input
+                ref={ackRef}
+                id="privacy-policy-consent"
+                type="checkbox"
+                checked={ack}
+                onChange={(e) => (setAck(e.target.checked), setAckErr(''))}
+                aria-describedby={ackErr ? 'privacy-ack-error' : undefined}
+                aria-invalid={!!ackErr && !ack}
+                className="mt-0.5 size-[18px] shrink-0 accent-brand-700"
+              />
+              <label htmlFor="privacy-policy-consent" className="text-[13.5px] leading-snug text-slate-800">
+                I have reviewed the Privacy Policy and understand how my personal information may be collected, used, and shared.
+              </label>
+            </div>
+            <div className="flex items-start gap-2.5">
+              <input
+                ref={adultRef}
+                id="age-confirm"
+                type="checkbox"
+                checked={adult}
+                onChange={(e) => (setAdult(e.target.checked), setAckErr(''))}
+                aria-describedby={ackErr ? 'privacy-ack-error' : undefined}
+                aria-invalid={!!ackErr && ack && !adult}
+                className="mt-0.5 size-[18px] shrink-0 accent-brand-700"
+              />
+              <label htmlFor="age-confirm" className="text-[13.5px] leading-snug text-slate-800">
+                I’m 18 or older.
+              </label>
+            </div>
+          </div>
+          <p id="privacy-ack-error" role="alert" aria-live="assertive" className={cx('text-sm font-medium text-rose-700', ackErr ? 'mt-2' : 'sr-only')}>
+            {ackErr && (
+              <>
+                <AlertTriangle className="mr-1 inline size-4 align-[-3px]" aria-hidden />
+                {ackErr}
+              </>
+            )}
+          </p>
+        </section>
+
+        <Button type="submit" variant="primary" className={cx('w-full', !(ack && adult && policy) && 'opacity-60')} aria-disabled={!(ack && adult && policy)} loading={busy}>
+          Create account
         </Button>
         <p className="text-center text-xs text-slate-500">No password needed. We’ll email you a link that signs you in with one click, plus a code you can type instead.</p>
       </form>
+      <PolicyModal open={viewPolicy} onClose={() => setViewPolicy(false)} />
     </AuthShell>
   );
 }

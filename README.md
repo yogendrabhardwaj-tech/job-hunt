@@ -29,6 +29,24 @@ npm run dev          # API on :8787, UI on http://localhost:5173
 
 For a single-process production build: `npm run build && npm start`, then open http://localhost:8787.
 
+Tests: `npm test` (vitest; a fake model server checks the consent gate, redaction and deletion).
+
+## Privacy and AI consent
+
+Nothing is sent to an AI source until the user agrees on the **AI Resume Processing** screen, and the server enforces it: every run goes through `runAgent()`, which refuses without a current consent record and checks again before each model request (`server/src/privacy/`).
+
+- **What each source does with data** lives in `privacy/policies.ts`. The consent screen and the Privacy Policy (`/privacy`) are built from it. Re-check it when a provider changes its terms, and bump `AI_CONSENT_VERSION` in `privacy/versions.ts` if what users agreed to changes.
+- **Contact details and the name** become placeholders (`[[EMAIL]]`, `[[NAME]]`, …) before anything reaches a model, and are put back on the server when results are saved.
+- **OpenRouter** requests ask for hosts that don't keep or train on prompts (`provider.data_collection: "deny"`).
+- **Records** are one write-once file per event in `users/<id>/consent/`. Admins can read a user's history at `/api/admin/users/<id>/consent`.
+- **Users** can change AI preferences, withdraw consent and delete their resume data on the Privacy page.
+
+| Variable | What it does |
+|---|---|
+| `PRIVACY_OPERATOR` | Who runs the app, shown in the Privacy Policy |
+| `PRIVACY_CONTACT` | Where privacy requests go, shown in the Privacy Policy |
+| `NARAROUTER_INCLUDED` | Set to `1` to offer the included NaraRouter source. Off by default: NaraRouter publishes no data policy |
+
 ## Workflow
 
 1. **Profile & master** — upload your resume (PDF, DOCX or text). The agent converts it to clean Markdown in `data/resumes/master_resume.md` without changing any facts. Add your achievements and LinkedIn. LinkedIn blocks scraping, so either upload the PDF from **More → Save to PDF** on your profile, or paste the text.

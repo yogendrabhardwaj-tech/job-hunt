@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { nanoid } from 'nanoid';
 import * as storage from '../storage.ts';
+import { markConsentChanged } from '../store.ts';
 import { currentUserId } from '../context.ts';
 import type { ProviderConfig } from '../llm/providers.ts';
 import type { TaskKind } from '../types.ts';
@@ -119,6 +120,7 @@ export function record(e: Omit<ConsentEvent, 'id' | 'userId' | 'at' | 'privacyVe
   const key = `${dir(userId)}${at.replace(/[:.]/g, '-')}_${event.id}.json`;
   if (storage.exists(key)) throw new Error('Consent record already exists'); // never overwrite
   storage.writeText(key, JSON.stringify(event, null, 2));
+  markConsentChanged();
   return event;
 }
 
@@ -138,6 +140,20 @@ export function history(userId: string): ConsentEvent[] {
 
 /** Another server instance may have written newer events. Returns true when anything changed. */
 export const refresh = (userId: string) => storage.refreshPrefix(dir(userId));
+
+/** Re-reads consent and deletion records written by other server instances (used by long-running AI runs). */
+export const refreshAll = (userId: string) => Promise.all([refresh(userId), storage.refreshPrefix(`users/${userId}/deletions/`)]);
+
+/** True when the user's resume data was deleted after `since` (an AI run that started earlier must not save). */
+export function dataDeletedSince(userId: string, since: string): boolean {
+  return storage.listFiles(`users/${userId}/deletions/`).some((f) => {
+    try {
+      return (JSON.parse(storage.readText(f.key) ?? '{}').startedAt ?? '') > since;
+    } catch {
+      return false;
+    }
+  });
+}
 
 // ---------------------------------------------------------------- status
 

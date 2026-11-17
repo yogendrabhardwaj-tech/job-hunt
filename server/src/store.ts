@@ -269,6 +269,15 @@ export function tailoredFileName(jobId: string) {
 
 // ---------- privacy: pending import and deletion (issues #22, #24) ----------
 
+/**
+ * Other server instances only re-read all of a user's files when db.json changes (storage.syncUser), so a consent
+ * record bumps a field here: a withdrawal then reaches every instance within one sync interval.
+ */
+export function markConsentChanged() {
+  db().consentRev = now();
+  persist();
+}
+
 const PENDING = 'pending-import.txt';
 
 /** Resume text extracted on our server but not yet converted, because AI processing isn't agreed to (yet). */

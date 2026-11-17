@@ -143,6 +143,9 @@ export interface ProviderConfig {
     cooldownUntil?: string;
   };
   availability: { ok: true } | { ok: false; reason: string };
+  /** Whether the user's AI consent covers this source; routing skips it otherwise. */
+  consentCovered?: boolean;
+  dataPolicy?: { training: Level; thirdParty: boolean };
 }
 
 export interface ProviderPreset {
@@ -161,6 +164,7 @@ export interface AISettings {
   claudeAllowed: boolean;
   presets: Record<ProviderKind, ProviderPreset>;
   providers: ProviderConfig[];
+  consentState?: ConsentState;
 }
 
 export interface ModelInfo {
@@ -188,6 +192,7 @@ export interface AdminCustomer {
   id: string;
   email: string;
   name: string;
+  consent?: { ai: ConsentState; aiVersion: string | null; aiAt: string | null; privacyAckVersion: string | null; privacyAckAt: string | null };
   createdAt: string;
   lastActive: string;
   hasMaster: boolean;
@@ -234,4 +239,76 @@ export interface AdminOverview {
   };
   daily: AdminDailyRow[];
   customers: AdminCustomer[];
+}
+
+// ---------------------------------------------------------------- privacy (server/src/privacy)
+
+export type Level = 'no' | 'may' | 'unknown';
+export type ConsentState = 'none' | 'active' | 'expired' | 'withdrawn';
+export type Feature = 'analyze' | 'tailor' | 'coverLetter' | 'interviewPrep' | 'copilot';
+
+export interface Preferences {
+  includeName: boolean;
+  includeContact: false;
+  features: Record<Feature, boolean>;
+}
+
+export interface CoveredSource {
+  id: string;
+  kind: ProviderKind;
+  model: string;
+  policy: string;
+}
+
+export interface ConsentStatus {
+  state: ConsentState;
+  preferences: Preferences;
+  current: { at: string; consentVersion?: string; action: string } | null;
+  sources: CoveredSource[];
+  privacyAck: { required: boolean; version: string | null; at: string | null };
+  versions: { ai: string; privacy: string; privacyEffectiveDate: string };
+}
+
+export interface ConsentHistory {
+  id: string;
+  type: 'ai_resume_processing' | 'privacy_policy_acknowledgment';
+  action: 'granted' | 'preferences_updated' | 'withdrawn' | 'acknowledged';
+  at: string;
+  consentVersion?: string;
+  privacyVersion: string;
+  via: 'signup' | 'in-app';
+}
+
+export interface SourcePolicy {
+  key: string;
+  recipient: string;
+  thirdParty: boolean;
+  training: Level;
+  trainingText: string;
+  retention: string;
+  retentionText: string;
+  humanReview?: string;
+  privacyUrl?: string;
+  termsUrl?: string;
+  verified: string;
+}
+
+export interface DisclosedSource {
+  id: string;
+  name: string;
+  kind: ProviderKind;
+  model: string;
+  policy: SourcePolicy;
+  fallbackOnly: boolean;
+  covered: boolean;
+}
+
+export interface Disclosure {
+  versions: { aiConsentVersion: string; privacyVersion: string; privacyEffectiveDate: string; termsVersion: string | null };
+  sources: DisclosedSource[];
+  worst: { training: 'no' | 'may'; humanReview: boolean; thirdParty: boolean };
+  webSearch: { recipient: string; text: string; privacyUrl: string };
+  sent: { item: string; sent: 'yes' | 'no'; detail: string }[];
+  features: Record<Feature, { label: string; description: string; default: boolean }>;
+  hash: string;
 }

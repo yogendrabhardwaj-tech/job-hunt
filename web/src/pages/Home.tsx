@@ -132,6 +132,7 @@ export function HomePage() {
             <a href="#how" className="py-2.5 hover:text-white">How it works</a>
             <Link to="/login" className="py-2.5 hover:text-white">Sign in</Link>
             <Link to="/signup" className="py-2.5 hover:text-white">Create account</Link>
+            <Link to="/privacy" className="py-2.5 hover:text-white">Privacy Policy</Link>
           </nav>
         </div>
       </footer>

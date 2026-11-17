@@ -95,16 +95,22 @@ const failText = (msg: string) => ({ content: [{ type: 'text' as const, text: `E
  * The model only ever sees placeholders for contact details; our tools get the real values back before they write
  * anything, and what they return is redacted again. Nothing is written once the run has been cancelled.
  */
-function guardTool(t: SdkMcpToolDefinition<any>, codec: Codec, task: Task): SdkMcpToolDefinition<any> {
+function guardTool(t: SdkMcpToolDefinition<any>, codec: Codec, check: () => Promise<void>): SdkMcpToolDefinition<any> {
   return {
     ...t,
     handler: async (args: any, extra: unknown) => {
-      const why = cancelReason(task);
-      if (why) return failText(why);
+      try {
+        await check(); // cancelled, consent withdrawn or data deleted since the run started: write nothing
+      } catch (e: any) {
+        return failText(e.message);
+      }
       return codec.redactDeep(await t.handler(codec.restoreDeep(args), extra));
     },
   };
 }
+
+/** How often a running AI task re-reads consent and deletion records written by other server instances. */
+const FRESH_MS = 20_000;
 
 /** Web tools get no real values back, and refuse anything carrying personal details (they'd leave our server). */
 function guardWeb(t: SdkMcpToolDefinition<any>, codec: Codec): SdkMcpToolDefinition<any> {
@@ -125,9 +131,16 @@ export async function runAgent(o: RunOptions): Promise<{ sessionId?: string; res
   const feature = consent.featureFor(o.task.kind);
   // No consent, no AI call (issue #20). Also re-checked before every model request below.
   const status = await consent.requireActiveFresh(userId, feature);
-  const checkpoint = () => {
+  let fresh = Date.now();
+  const checkpoint = async () => {
     const why = cancelReason(o.task);
     if (why) throw new CancelledError(why);
+    // on Vercel the withdrawal or deletion may have happened on another server instance
+    if (Date.now() - fresh > FRESH_MS) {
+      fresh = Date.now();
+      await consent.refreshAll(userId);
+    }
+    if (consent.dataDeletedSince(userId, o.task.startedAt)) throw new CancelledError('Your resume data was deleted, so this run was stopped.');
     consent.requireActive(userId, feature);
   };
 
@@ -156,7 +169,7 @@ export async function runAgent(o: RunOptions): Promise<{ sessionId?: string; res
   const profile = store.getProfile();
   const codec = codecFor(profile, status.preferences, [store.readMaster(), profile.achievements, profile.linkedinText]);
   const prompt = codec.redact(o.prompt);
-  const tools = o.tools.map((t) => guardTool(t, codec, o.task));
+  const tools = o.tools.map((t) => guardTool(t, codec, checkpoint));
   const system = `${o.system}\n\n${PLACEHOLDERS}`;
   const run: RunOptions = { ...o, system, prompt, tools };
   const restorer = streamRestorer(codec);
@@ -177,7 +190,7 @@ export async function runAgent(o: RunOptions): Promise<{ sessionId?: string; res
   const errors: string[] = [];
 
   for (const p of order) {
-    checkpoint();
+    await checkpoint();
     providers.beginRun(p.id);
     pushEvent(o.task, { type: 'status', text: `Using ${p.name} · ${p.model}` });
     try {
@@ -215,7 +228,7 @@ export async function runAgent(o: RunOptions): Promise<{ sessionId?: string; res
 interface ClaudeHooks {
   onText: (t: string) => void;
   onTool: (name: string, input: any) => void;
-  checkpoint: () => void;
+  checkpoint: () => Promise<void>;
 }
 
 async function runClaude(o: RunOptions, p: ProviderConfig, codec: Codec, h: ClaudeHooks, resume?: string): Promise<{ sessionId?: string; result: string }> {
@@ -270,7 +283,7 @@ async function runClaude(o: RunOptions, p: ProviderConfig, codec: Codec, h: Clau
     } else if (m.type === 'assistant') {
       // between model turns: stop if consent was withdrawn or the task cancelled
       try {
-        h.checkpoint();
+        await h.checkpoint();
       } catch (e) {
         abort.abort();
         throw e;

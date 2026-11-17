@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Briefcase, ChartColumn, CircleHelp, Cpu, LogOut, FileText, LayoutDashboard, Loader2, Menu, Plus, Sparkles, UserRound, X } from 'lucide-react';
+import { Briefcase, ChartColumn, CircleHelp, Cpu, LogOut, FileText, LayoutDashboard, Loader2, Menu, Plus, ShieldCheck, Sparkles, UserRound, X } from 'lucide-react';
 import { useLive, useProfile, BG_SCANS_KEY } from '../lib/live';
 import { api } from '../lib/api';
 import { cx } from '../lib/format';
@@ -9,6 +9,7 @@ import { auth } from '../lib/auth';
 import { useAuth } from '../lib/useAuth';
 import { NewJobModal } from './NewJobModal';
 import { BrandMark, ThemeSwitcher } from './ThemeSwitcher';
+import { ConsentHost } from './ConsentDialog';
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -16,6 +17,7 @@ const NAV = [
   { to: '/resumes', label: 'Resume library', icon: FileText },
   { to: '/profile', label: 'Profile & master', icon: UserRound },
   { to: '/settings', label: 'AI sources', icon: Cpu },
+  { to: '/privacy-settings', label: 'Privacy', icon: ShieldCheck },
   { to: '/help/api-keys', label: 'API key help', icon: CircleHelp },
 ];
 
@@ -196,6 +198,9 @@ export function Layout() {
             <LogOut className="size-3.5 shrink-0" />
             <span className="truncate">Sign out{user ? ` · ${user.email}` : ''}</span>
           </button>
+          <a href="/privacy" target="_blank" rel="noreferrer" className="block px-3 text-[11.5px] text-slate-400 underline-offset-2 hover:text-slate-200 hover:underline">
+            Privacy Policy
+          </a>
         </div>
       </nav>
 
@@ -214,6 +219,7 @@ export function Layout() {
         </button>
       )}
       <NewJobModal open={newOpen} onClose={() => setNewOpen(false)} />
+      <ConsentHost />
     </div>
   );
 }

@@ -20,6 +20,9 @@ import { HomePage } from './pages/Home';
 import { AuthLinkPage } from './pages/AuthLink';
 import { NotFoundPage } from './pages/NotFound';
 import { AdminPage } from './pages/Admin';
+import { PrivacyPolicyPage } from './pages/PrivacyPolicy';
+import { PrivacySettingsPage } from './pages/PrivacySettings';
+import { PrivacyAckDialog } from './components/PrivacyAckDialog';
 import { auth, type AuthUser } from './lib/auth';
 import { AuthContext } from './lib/useAuth';
 
@@ -37,6 +40,8 @@ function RequireAuth() {
   // signed-out visitors to the root see the public home page; anywhere else goes to sign-in
   if (!user && loc.pathname === '/') return <HomePage />;
   if (!user) return <Navigate to={`/login?next=${encodeURIComponent(loc.pathname + loc.search)}`} replace />;
+  // accounts without an acknowledgment of the current Privacy Policy see only that until they accept it (issue #25)
+  if (user.privacyAckRequired) return <div className="min-h-screen bg-slate-100"><PrivacyAckDialog onDone={() => setUser({ ...user, privacyAckRequired: false })} /></div>;
   return (
     <AuthContext.Provider value={user}>
       <LiveProvider>
@@ -53,6 +58,7 @@ const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
   { path: '/signup', element: <SignupPage /> },
   { path: '/auth/link', element: <AuthLinkPage /> },
+  { path: '/privacy', element: <PrivacyPolicyPage /> },
   {
     element: <RequireAuth />,
     children: [
@@ -66,6 +72,7 @@ const router = createBrowserRouter([
       { path: '/profile', element: <ProfilePage /> },
       { path: '/resumes', element: <Resumes /> },
       { path: '/settings', element: <SettingsPage /> },
+      { path: '/privacy-settings', element: <PrivacySettingsPage /> },
       { path: '/help/api-keys', element: <KeyHelpPage /> },
       { path: '/admin', element: <AdminPage /> },
     ],

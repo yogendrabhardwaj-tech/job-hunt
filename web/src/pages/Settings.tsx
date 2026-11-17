@@ -274,6 +274,16 @@ function SourceRow({
             <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">{s.presets[p.kind].label}</span>
             {p.builtin && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800 ring-1 ring-inset ring-emerald-200">Included · free</span>}
             {p.fallbackOnly && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200">Fallback only</span>}
+            {p.dataPolicy && p.dataPolicy.training !== 'no' && (
+              <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200" title="See the consent screen or Privacy page for this source's data terms">
+                {p.dataPolicy.training === 'may' ? 'May train on prompts' : 'Data policy unknown'}
+              </span>
+            )}
+            {p.enabled && s.consentState === 'active' && !p.consentCovered && (
+              <Link to="/privacy-settings" className="rounded bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-800 ring-1 ring-inset ring-rose-200 hover:underline">
+                Not covered by your consent
+              </Link>
+            )}
             <Availability p={p} />
           </div>
           <div className="mt-0.5 truncate font-mono text-xs text-slate-600">{p.model || '— no model set —'}</div>
